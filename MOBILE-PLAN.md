@@ -400,6 +400,16 @@ server changes. Justify it or skip it — it is the only new always-on listener 
   ticket-reuse/4403 as full re-auth, not retry. Exponential backoff with jitter.
 - **Mobile app lifecycle killing sockets.** See P6. Assume the socket is dead on every resume.
 
+**Inherited test debt (found 2026-09-19)**
+- Five tests across three files fail on upstream `main` as extracted, with none of this project's
+  code involved: `gateway-connecting-overlay.test.tsx` (3 - `useNavigate()` used outside a
+  `<Router>`), `pane-shell.test.tsx` (1 - widthOverride expects 320px, gets 240px), and
+  `use-prompt-actions/index.test.tsx` (1 - session-resume payload gained a `source` field).
+- CI excludes those three files **by name** so the other ~1245 tests still gate the build. Do not
+  widen that into a blanket `continue-on-error` - a real regression must still fail CI.
+- The pane-shell one is likely the pre-tree `pane-shell` this repo still carries; expect it to
+  resolve or change shape when the deferred upstream "PR2" sync lands.
+
 **This environment**
 - **CT 114 rootfs is 100% full and swap is 512/512.** This will cause failures on its own and blocks
   the isolated-admin-dashboard fix in §3.4. Needs resolving independently of this project. Nothing in
