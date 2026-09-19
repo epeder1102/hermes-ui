@@ -30,6 +30,7 @@ import type {
   HermesNotification
 } from '@/global'
 
+import { peekCredential, SESSION_TOKEN_KEY, setCredential } from './credential-store'
 import {
   activeUpstreamOrigin,
   classifyGatewayReach,
@@ -52,8 +53,6 @@ declare global {
     __HERMES_GATEWAY_WHITELIST__?: string[]
   }
 }
-
-const TOKEN_STORAGE_KEY = 'hermes-web.session-token'
 
 const noop = (): void => {}
 const unsubscribed = (): (() => void) => noop
@@ -110,14 +109,14 @@ function resolveToken(): string {
     const param = url.searchParams.get('token')
 
     if (param) {
-      localStorage.setItem(TOKEN_STORAGE_KEY, param)
+      void setCredential(SESSION_TOKEN_KEY, param)
       url.searchParams.delete('token')
       window.history.replaceState(null, '', url.toString())
 
       return param
     }
 
-    const stored = localStorage.getItem(TOKEN_STORAGE_KEY)
+    const stored = peekCredential(SESSION_TOKEN_KEY)
 
     if (stored) {return stored}
   } catch {
