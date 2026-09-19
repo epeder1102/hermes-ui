@@ -212,30 +212,46 @@ Keep a **non-loopback bind** so the auth gate stays engaged, and narrow it.
 so the phone reaches CT 114 over Tailscale today. Verified: the host's `ts-postrouting` chain
 MASQUERADEs subnet-route traffic, so tailnet clients arrive at CT 114 sourced from `192.168.10.10`.
 
-### 3.3 Reachability, and the step that still removes LAN exposure
+### 3.3 Reachability — DONE 2026-09-19
 
-Rotating the credential (done) closes the urgent half: the shared weak password in front of a
-root-capable profile. It does **not** remove LAN reachability — any device on `192.168.10.0/24` can
-still reach the login page, it just cannot guess its way in.
+Tailscale now runs inside CT 114, which joined the tailnet as **`hermes` = `100.104.221.85`**, and
+the dashboard binds **only** to that address. Implemented:
 
-To make Tailscale the only path, the clean fix is **Tailscale inside CT 114**, with the dashboard
-bound to its tailnet address:
+- `/dev/net/tun` passthrough added to `114.conf` (same pattern CT 110 uses); backup
+  `/root/114.conf.bak.20260919-tailscale`.
+- `tailscale` 1.102.4 installed in CT 114, `tailscaled` enabled.
+- `hermes-dashboard.service` `ExecStart` now `--host 100.104.221.85 --port 9119 --no-open`
+  (was `--host 0.0.0.0 ... --insecure`); backup `hermes-dashboard.service.bak.20260919-bindauth`.
 
-- keeps the auth gate engaged (CGNAT is treated as public),
-- satisfies `_is_accepted_host` naturally (Host == the bound tailnet address),
-- removes the LAN listener by construction — no firewall needed, which matters because
-  **iptables does not work inside this unprivileged LXC** (verified), and the Proxmox per-guest
-  firewall would require enabling the cluster firewall (a documented lockout risk).
-- gives CT 114 its own tailnet identity, so per-node ACLs can restrict which devices reach it.
+**Verified:**
 
-Cost: `tailscaled` ~40 MB RSS and `/dev/net/tun` passthrough in `114.conf` (the same pattern CT 110
-already uses), plus one CT 114 restart. Affordable now that CT 114 is 16 G / 41% with RAM headroom.
-Requires Eric to authorise the new device once in the Tailscale admin console.
+| Check | Result |
+|---|---|
+| `192.168.10.130:9119` (LAN) | **connection refused** — LAN exposure gone |
+| `100.104.221.85:9119/api/profiles` (tailnet) | `401` — listening, auth gate engaged |
+| `/login` with `Host: evil.test` | `400` — rebinding defence active |
+| `/login` with correct Host | `200` |
 
-**Trade-off to accept consciously:** once the bind moves to the tailnet address, the Windows desktop
-app needs Tailscale running even at home. `lappytoppy` is already a tailnet node, so this is a
-"leave Tailscale on" change, not a setup change — but note the documented laptop gotcha that
-Tailscale and ProtonVPN running together break connectivity.
+Note the auth middleware runs before the host check on `/api/` paths, so a bogus Host there returns
+401 rather than 400. Test the Host defence on a public path such as `/login`, or the result is
+misleading.
+
+**The raw tailnet IP is used deliberately, not the MagicDNS name.** `_is_accepted_host()` compares
+the Host header against the bound interface, so `Host: hermes.<tailnet>.ts.net` against an IP-bound
+server is rejected with 400. This also matches the FuelTracker lesson that MagicDNS names fail inside
+a release APK. **Caveat:** if CT 114's tailnet IP changes, the bind, the app's saved gateway entry and
+`app/android-overrides/network_security_config.xml` must all be updated together.
+
+**Consequences to accept:**
+
+- The Windows desktop app must now point at `http://100.104.221.85:9119` **with Tailscale running**,
+  even at home. `lappytoppy` is already a tailnet node. Remember the documented gotcha that Tailscale
+  and ProtonVPN together break that laptop's connectivity.
+- **Disable key expiry for the `hermes` node** in the Tailscale admin console. Tailscale node keys
+  expire by default (~180 days); when it lapses the dashboard becomes unreachable with no obvious
+  cause. Servers should be set to never expire.
+- Tailnet devices are now part of the TCB for this surface. `pixel-7` is still a member despite the
+  phone migration — worth removing.
 
 ### 3.4 Auth — three layers, and one honest gap
 

@@ -15,7 +15,7 @@
     <base-config cleartextTrafficPermitted="false" />
 
     <domain-config cleartextTrafficPermitted="true">
-        <!-- CT 114 over the host's advertised LAN subnet route -->
-        <domain includeSubdomains="false">192.168.10.130</domain>
+        <!-- CT 114 (hermes) on the tailnet - reachable only over WireGuard -->
+        <domain includeSubdomains="false">100.104.221.85</domain>
     </domain-config>
 </network-security-config>
