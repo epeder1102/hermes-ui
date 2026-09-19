@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Hermes dashboard is served over plain HTTP, reached across the Tailscale
+  WireGuard tunnel (MOBILE-PLAN.md 3.2). There is no plaintext hop on the wire,
+  so HTTP is acceptable here - but Android blocks cleartext by default and would
+  fail every request with no useful error.
+
+  Cleartext is therefore permitted for SPECIFIC hosts only, never globally:
+  cleartextTrafficPermitted stays false in base-config so any other host the app
+  might ever talk to is still forced to TLS.
+
+  Add the CT 114 tailnet name/address here once it is registered.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- CT 114 over the host's advertised LAN subnet route -->
+        <domain includeSubdomains="false">192.168.10.130</domain>
+    </domain-config>
+</network-security-config>

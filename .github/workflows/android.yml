@@ -1,0 +1,92 @@
+# Builds a sideloadable Android APK on GitHub's runners.
+#
+# Why this exists: an Android build needs the Android SDK + Gradle (several GB).
+# The devbox (CT 117) has ~170 MB free, so the build cannot happen there. This is
+# the Capacitor equivalent of what EAS does for the Expo projects: push code, a
+# GitHub-hosted machine builds it, download the APK from the run's artifacts.
+#
+# The android/ project is generated fresh each run rather than committed, so the
+# devbox never needs the Capacitor packages either. Once CT 117 has disk room we
+# should commit android/ instead - P5 needs persistent native edits (FLAG_SECURE,
+# allowBackup=false) that are awkward to apply as CI patches.
+
+name: Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'feat/**']
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # NOT --frozen-lockfile: the Capacitor deps are declared in package.json
+      # but bun.lock has not been regenerated (the devbox has no disk to install
+      # them). The first green run should have its updated lockfile committed.
+      - name: Install dependencies
+        working-directory: app
+        run: bun install
+
+      - name: Typecheck
+        working-directory: app
+        run: bunx tsc -p . --noEmit
+
+      - name: Lint
+        working-directory: app
+        run: bunx eslint src/
+
+      - name: Test
+        working-directory: app
+        run: bunx vitest run --environment jsdom
+
+      - name: Build web bundle
+        working-directory: app
+        run: bunx vite build
+
+      - name: Generate Android project
+        working-directory: app
+        run: bunx cap add android
+
+      # Android blocks cleartext HTTP by default, which would break every call to
+      # the dashboard (plain HTTP over WireGuard). Apply the host-scoped override
+      # instead of the blunt android:usesCleartextTraffic="true".
+      - name: Apply network security config
+        working-directory: app
+        run: |
+          set -euo pipefail
+          mkdir -p android/app/src/main/res/xml
+          cp android-overrides/network_security_config.xml android/app/src/main/res/xml/
+          manifest=android/app/src/main/AndroidManifest.xml
+          if ! grep -q 'android:networkSecurityConfig' "$manifest"; then
+            sed -i 's|<application |<application android:networkSecurityConfig="@xml/network_security_config" |' "$manifest"
+          fi
+          grep -q 'android:networkSecurityConfig' "$manifest" || {
+            echo "failed to patch AndroidManifest.xml"; exit 1; }
+          echo "--- application tag ---"
+          grep -n '<application' "$manifest"
+
+      - name: Sync Capacitor
+        working-directory: app
+        run: bunx cap sync android
+
+      - name: Build debug APK
+        working-directory: app/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hermes-debug-apk
+          path: app/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
