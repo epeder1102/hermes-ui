@@ -60,8 +60,11 @@ problem in the current setup and it predates this project.
 - `free -m` → 753/1024 MB used, **swap 512/512 MB full**
 - `hermes dashboard` RSS: **~110 MB**
 
-**Consequence:** a second `--isolated` dashboard to give `homelab-admin` its own credential would
-cost ~110 MB and cannot be afforded today. That option is deferred behind the CT 114 growth work
+**Consequence (superseded 2026-09-19):** this was the blocker on giving `homelab-admin` its own
+credential. **CT 114 has since been grown to 16 G (41% used) with RAM headroom, so a second
+`--isolated` dashboard at ~110 MB is now affordable** and should be taken - it is the only way to get
+a real server-side boundary between `dev` and root. Original text: a second dashboard would
+cost ~110 MB and could not be afforded. That option is deferred behind the CT 114 growth work
 already in the homelab backlog, and §3.4 specifies the interim mitigation.
 
 ### 0.5 The devbox (CT 117) constraints
@@ -175,48 +178,64 @@ exposure. Revisit only if other household members need it.
 
 ## 3. Decision: network exposure and auth
 
-### 3.1 Target topology
+### 3.1 CORRECTION (2026-09-19): a loopback bind DISABLES authentication
 
-One dashboard process (the existing one), bound to loopback, reachable only over Tailscale via a
-host-side SSH tunnel.
+The original version of this section proposed binding the dashboard to `127.0.0.1` and exposing it
+through a host-side SSH tunnel. **That is wrong and would have been a serious regression.** From
+`hermes_cli/web_server.py`:
 
-| Component | Where | Bind |
-|---|---|---|
-| `hermes dashboard` (all profiles) | CT 114 | `127.0.0.1:9119` — **changed from `0.0.0.0`** |
-| `hermes-ui-tunnel.service` | Proxmox host | listens `100.80.182.126:9119` → `127.0.0.1:9119` in CT 114 |
-| Android app | Galaxy S26 | connects to `http://100.80.182.126:9119` over Tailscale |
+- `should_require_auth(host)` returns **False for a loopback bind** — "no auth - local-only, trusted
+  operator". Auth only engages on a non-loopback bind. RFC1918/CGNAT/link-local are deliberately
+  treated as PUBLIC, which is the behaviour we want.
+- `host_header_middleware` + `_is_accepted_host()` reject any request whose `Host` does not match the
+  bound interface (anti-DNS-rebinding, GHSA-ppp5-vxwm-4cf7). A tunnel presenting
+  `Host: 100.80.182.126:9119` to a loopback-bound server is rejected with 400.
 
-The tunnel is a single `ssh -N -L` unit on the host, modelled on the existing
-`obsidian-tunnel.service` pattern that is already proven in this environment:
+So loopback + tunnel would have either 400'd every request or, if the Host check were satisfied,
+served the whole tailnet **with no authentication at all**. Do not do it.
 
-```
-ssh -N -o ExitOnForwardFailure=yes -o GatewayPorts=clientspecified \
-    -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -o TCPKeepAlive=no \
-    -L 100.80.182.126:9119:127.0.0.1:9119 root@192.168.10.130
-```
+A second, subtler point: `_is_accepted_host()` returns `True` for *any* Host when the bind is
+`0.0.0.0` ("no protection possible at this layer"). The pre-existing `--host 0.0.0.0` therefore also
+disabled the rebinding defence.
 
-`Restart=always`, plus a watchdog that curls the tunnel port and restarts the unit on failure.
+### 3.2 Target topology (corrected)
 
-### 3.2 Why this shape
+Keep a **non-loopback bind** so the auth gate stays engaged, and narrow it.
 
-- **The dashboard becomes unreachable from the LAN.** Today any device on `192.168.10.0/24` can
-  reach it. After this change the only socket is on CT 114's loopback, and the only way in is an SSH
-  tunnel originating on the Proxmox host, fronted by a tailnet-only listener.
-- **No new always-on network-facing process.** The tunnel is an `ssh` client (~4 MB) on the host, not
-  in RAM-starved CT 114. Net change to CT 114's footprint: **zero**.
-- **No reverse proxy.** Not needed for Android (Capacitor's origin is already trusted), so adding a
-  TLS-terminating listener now would be attack surface bought for no benefit. It becomes worth it
-  only for desktop-browser access — see P7, which is optional.
-- **No TLS on the tunnel port, deliberately.** Phone↔host is WireGuard; host↔CT 114 is SSH. There is
-  no plaintext hop. TLS here would buy nothing and drag back the cert/hostname/cookie problem.
+| Component | Bind | Auth gate | Host-header defence |
+|---|---|---|---|
+| `hermes dashboard` (was) | `0.0.0.0:9119` | on | **off** (0.0.0.0 accepts any Host) |
+| `hermes dashboard` (now) | `192.168.10.130:9119` | on | **on** |
+| `hermes dashboard` (target) | CT 114's tailnet IP | on | on |
 
-### 3.3 Reachability, stated explicitly
+**No SSH tunnel is needed.** The Proxmox host already advertises the `192.168.10.0/24` subnet route,
+so the phone reaches CT 114 over Tailscale today. Verified: the host's `ts-postrouting` chain
+MASQUERADEs subnet-route traffic, so tailnet clients arrive at CT 114 sourced from `192.168.10.10`.
 
-- **Public internet: nothing.** No port forward, no public DNS, no WAN-facing listener. The tunnel
-  binds `100.80.182.126`, a CGNAT-range tailnet address that is unroutable from the internet.
-- **LAN without Tailscale: nothing.** This is a change from today, and it is the main security win.
-- **Tailnet: port 9119 only**, only from ACL-permitted devices, only with a valid dashboard session.
-- **Inside CT 114: loopback only.**
+### 3.3 Reachability, and the step that still removes LAN exposure
+
+Rotating the credential (done) closes the urgent half: the shared weak password in front of a
+root-capable profile. It does **not** remove LAN reachability — any device on `192.168.10.0/24` can
+still reach the login page, it just cannot guess its way in.
+
+To make Tailscale the only path, the clean fix is **Tailscale inside CT 114**, with the dashboard
+bound to its tailnet address:
+
+- keeps the auth gate engaged (CGNAT is treated as public),
+- satisfies `_is_accepted_host` naturally (Host == the bound tailnet address),
+- removes the LAN listener by construction — no firewall needed, which matters because
+  **iptables does not work inside this unprivileged LXC** (verified), and the Proxmox per-guest
+  firewall would require enabling the cluster firewall (a documented lockout risk).
+- gives CT 114 its own tailnet identity, so per-node ACLs can restrict which devices reach it.
+
+Cost: `tailscaled` ~40 MB RSS and `/dev/net/tun` passthrough in `114.conf` (the same pattern CT 110
+already uses), plus one CT 114 restart. Affordable now that CT 114 is 16 G / 41% with RAM headroom.
+Requires Eric to authorise the new device once in the Tailscale admin console.
+
+**Trade-off to accept consciously:** once the bind moves to the tailnet address, the Windows desktop
+app needs Tailscale running even at home. `lappytoppy` is already a tailnet node, so this is a
+"leave Tailscale on" change, not a setup change — but note the documented laptop gotcha that
+Tailscale and ProtonVPN running together break connectivity.
 
 ### 3.4 Auth — three layers, and one honest gap
 
