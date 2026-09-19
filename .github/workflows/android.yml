@@ -81,14 +81,26 @@ jobs:
           set -euo pipefail
           mkdir -p android/app/src/main/res/xml
           cp android-overrides/network_security_config.xml android/app/src/main/res/xml/
-          manifest=android/app/src/main/AndroidManifest.xml
-          if ! grep -q 'android:networkSecurityConfig' "$manifest"; then
-            sed -i 's|<application |<application android:networkSecurityConfig="@xml/network_security_config" |' "$manifest"
-          fi
-          grep -q 'android:networkSecurityConfig' "$manifest" || {
-            echo "failed to patch AndroidManifest.xml"; exit 1; }
-          echo "--- application tag ---"
-          grep -n '<application' "$manifest"
+          python3 - <<'PY'
+          import re, sys
+          p = "android/app/src/main/AndroidManifest.xml"
+          s = open(p).read()
+          if "networkSecurityConfig" not in s:
+              # \b so this matches whether the tag is followed by a space, a
+              # newline or an attribute - the generated manifest wraps its
+              # attributes onto separate lines, which a naive "<application "
+              # match misses entirely.
+              s2 = re.sub(r"<application\b",
+                          '<application android:networkSecurityConfig="@xml/network_security_config"',
+                          s, count=1)
+              if s2 == s:
+                  print("ERROR: no <application> tag found in", p)
+                  print(s[:2000])
+                  sys.exit(1)
+              open(p, "w").write(s2)
+          print("--- manifest after patch ---")
+          print(open(p).read()[:800])
+          PY
 
       - name: Sync Capacitor
         working-directory: app
