@@ -3,11 +3,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ToolPart } from '@/components/assistant-ui/tool/fallback-model'
 import type { ChatMessage, ChatMessagePart } from '@/lib/chat-messages'
+import { $activeGatewayProfile, $newChatProfile, normalizeProfileKey } from '@/store/profile'
 import { $awaitingResponse, $busy, $gatewayState, $messages } from '@/store/session'
 
 import { CodeBlock } from './code-block'
 import { DiffView } from './diff-view'
 import { looksLikeDiff, splitMarkdownSegments } from './markdown-segments'
+import { ProfileSheet } from './profile-sheet'
 import { switchShellMode } from './shell-mode'
 import { ToolCard } from './tool-card'
 import { useChatEngine } from './use-chat-engine'
@@ -82,6 +84,11 @@ export function MobileApp() {
   const awaiting = useStore($awaitingResponse)
   const gatewayState = useStore($gatewayState)
 
+  const activeGatewayProfile = useStore($activeGatewayProfile)
+  const newChatProfile = useStore($newChatProfile)
+  const profile = normalizeProfileKey(newChatProfile ?? activeGatewayProfile)
+
+  const [profileOpen, setProfileOpen] = useState(false)
   const [draft, setDraft] = useState('')
   const endRef = useRef<HTMLDivElement | null>(null)
 
@@ -129,10 +136,35 @@ export function MobileApp() {
         }}
       >
         <strong style={{ fontSize: 14 }}>Hermes mobile</strong>
-        <span style={{ opacity: 0.65 }}>
-          gateway: {gatewayState}
-          {busy ? ' · busy' : ''}
-          {awaiting ? ' · awaiting' : ''}
+        {/* The profile is the single most important piece of context on this
+            screen — which agent a message will reach — so it is a first-class
+            header control, not buried in a settings page. */}
+        <button
+          aria-label={`Profile: ${profile}. Change profile.`}
+          onClick={() => setProfileOpen(true)}
+          style={{
+            ...btn,
+            padding: '6px 10px',
+            minHeight: 36,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            maxWidth: '45%'
+          }}
+          type="button"
+        >
+          <span
+            style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}
+          >
+            {profile}
+          </span>
+          <span aria-hidden style={{ opacity: 0.5 }}>
+            ▾
+          </span>
+        </button>
+
+        <span style={{ opacity: 0.6, fontSize: 12 }}>
+          {gatewayState === 'open' ? (busy ? 'busy' : awaiting ? 'awaiting' : 'ready') : gatewayState}
         </span>
         <button onClick={() => startFreshSessionDraft()} style={{ marginLeft: 'auto', ...btn }} type="button">
           New
@@ -221,6 +253,8 @@ export function MobileApp() {
           </button>
         )}
       </footer>
+
+      {profileOpen && <ProfileSheet onClose={() => setProfileOpen(false)} />}
     </div>
   )
 }

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { I18nProvider } from '@/i18n'
 import { queryClient } from '@/lib/query-client'
+import { $activeGatewayProfile, $newChatProfile, $profiles } from '@/store/profile'
 import { setGatewayState, setMessages } from '@/store/session'
 import { ThemeProvider } from '@/themes/context'
 
@@ -175,5 +176,76 @@ describe('mobile tool-call cards', () => {
     const rendered = screen.getByText('first I will look').parentElement?.textContent ?? ''
 
     expect(rendered.indexOf('first I will look')).toBeLessThan(rendered.indexOf('and here is what I found'))
+  })
+})
+
+describe('mobile profile switcher', () => {
+  const PROFILES = [
+    { has_env: true, is_default: true, model: 'gpt-5.6-sol', name: 'default', path: '/root/.hermes', provider: 'openai-codex', skill_count: 3 },
+    { has_env: true, is_default: false, model: 'gpt-5.6-sol', name: 'dev', path: '/root/.hermes/profiles/dev', provider: 'openai-codex', skill_count: 5 }
+  ]
+
+  afterEach(() => {
+    act(() => {
+      $profiles.set([])
+      $newChatProfile.set(null)
+      // selectProfile() also drives ensureGatewayProfile(), which sets the
+      // active gateway profile. Resetting only $newChatProfile would leak the
+      // previous test's choice into the next render.
+      $activeGatewayProfile.set('default')
+    })
+  })
+
+  it('shows the active profile in the header', () => {
+    renderMobileShell()
+
+    expect(screen.getByRole('button', { name: /profile: default/i })).toBeTruthy()
+  })
+
+  it('lists the available profiles when opened', () => {
+    renderMobileShell()
+
+    act(() => {
+      $profiles.set(PROFILES)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /profile: default/i }))
+
+    expect(screen.getByText('dev')).toBeTruthy()
+    expect(screen.getAllByText(/openai-codex/).length).toBeGreaterThan(0)
+  })
+
+  it('selecting a profile targets the next chat at it', () => {
+    renderMobileShell()
+
+    act(() => {
+      $profiles.set(PROFILES)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /profile: default/i }))
+    act(() => {
+      fireEvent.click(screen.getByText('dev'))
+    })
+
+    // $newChatProfile is what createBackendSessionForSend passes to
+    // session.create as `profile`, which is the ONLY thing that moves a turn to
+    // another profile's HERMES_HOME. Asserting on it pins the actual contract
+    // rather than the button's styling.
+    expect($newChatProfile.get()).toBe('dev')
+    expect(screen.getByRole('button', { name: /profile: dev/i })).toBeTruthy()
+  })
+
+  it('closes without changing anything on cancel', () => {
+    renderMobileShell()
+
+    act(() => {
+      $profiles.set(PROFILES)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /profile: default/i }))
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+
+    expect($newChatProfile.get()).toBeNull()
+    expect(screen.queryByText(/applies to the next chat/i)).toBeNull()
   })
 })
