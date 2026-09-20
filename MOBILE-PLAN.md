@@ -168,9 +168,33 @@ From `hermes dashboard --help`:
 > launches attach to (or start) ONE machine-level dashboard and preselect the profile in the UI's
 > profile switcher.**
 
-**Consequence:** one already-running process serves all profiles, with profile switching built in.
-The app needs **one** endpoint, not three. Zero new processes, zero added RAM. This is strictly
-better than the three-tunnel design and it is what we will build against.
+**Consequence:** one already-running process serves all profiles. The app needs **one** endpoint, not
+three. Zero new processes, zero added RAM. This is strictly better than the three-tunnel design and
+it is what we built against.
+
+> **⚠️ CORRECTION (2026-09-20) — "profile switching built in" is right about the outcome but wrong
+> about the mechanism, and the wrong mechanism is the one you will reach for first.**
+>
+> Switching is **not per-socket**. Verified against the running system:
+> - The dashboard process is scoped to **one** profile via `HERMES_HOME`. `hermes-dashboard.service`
+>   sets no override, so it runs as `default`. `POST /api/profiles/active` says in its own docstring
+>   that it "does not retarget the already-running dashboard process".
+> - The web bridge's `connection(profile)` returns the **same** `baseUrl` for every profile, and
+>   `getGatewayWsUrl()` takes no profile argument. So `ensureGatewayForProfile` → `openSecondary`,
+>   which reaches a per-profile backend in Electron, opens a second socket to the **same** default
+>   backend in a browser. The `profile` field on the connection is cosmetic there.
+> - `tui_gateway/ws.py` contains the string `profile` **zero** times.
+>
+> Switching is **per session**. `session.create` accepts a `profile` param (the gateway's
+> "app-global remote mode"): `tui_gateway/server.py` resolves it with `_profile_home()`, stores
+> `profile_home` on the session, and `_start_agent_build` re-binds `HERMES_HOME` around every turn so
+> config, skills, model and `state.db` resolve to that profile. `selectProfile()` sets
+> `$newChatProfile`; `createBackendSessionForSend` already passes it through.
+>
+> Practical upshot: a profile switch applies to the **next** session and cannot move an existing
+> conversation. Implemented in `mobile/profile-sheet.tsx` (P4.4) with no protocol work — only UI,
+> plus two effects the mobile engine was missing (`$freshSessionRequest` → `startFreshSessionDraft`,
+> and `refreshActiveProfile()` on gateway open).
 
 **Security consequence (the bad half):** one credential reaches every profile including
 `homelab-admin`. There is no per-profile credential boundary in unified mode. See §3.4.
