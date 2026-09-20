@@ -1,32 +1,65 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
+import type { ToolPart } from '@/components/assistant-ui/tool/fallback-model'
+import type { ChatMessage, ChatMessagePart } from '@/lib/chat-messages'
 import { $awaitingResponse, $busy, $gatewayState, $messages } from '@/store/session'
 
+import { ToolCard } from './tool-card'
 import { useChatEngine } from './use-chat-engine'
 
-/** Flatten a ChatMessage's parts down to plain text for the probe renderer. */
-function partsToText(parts: unknown[]): string {
-  return parts
-    .map(part => {
-      if (typeof part === 'string') {
-        return part
-      }
+/** Text-bearing parts are concatenated; tool calls render as their own cards. */
+function textOf(part: ChatMessagePart): string {
+  if (typeof part === 'string') {
+    return part
+  }
 
-      const p = part as { type?: string; text?: string; toolName?: string }
+  const p = part as { type?: string; text?: string }
 
-      if (p.type === 'text' || p.type === 'reasoning') {
-        return p.text ?? ''
-      }
+  return p.type === 'text' || p.type === 'reasoning' ? (p.text ?? '') : ''
+}
 
-      if (p.type === 'tool-call') {
-        return `[tool: ${p.toolName ?? 'unknown'}]`
-      }
+function isToolPart(part: ChatMessagePart): boolean {
+  return typeof part !== 'string' && (part as { type?: string }).type === 'tool-call'
+}
 
-      return ''
-    })
-    .filter(Boolean)
-    .join('\n')
+/**
+ * Split a message into ordered blocks so tool cards keep their position in the
+ * narrative instead of being hoisted to the top or bottom. Consecutive text
+ * parts collapse into one bubble; each tool call is its own full-width card,
+ * because a tool card nested inside a chat bubble has nowhere to put a
+ * fixed-height scroll region.
+ */
+function blocksOf(message: ChatMessage): Array<{ key: string; kind: 'text'; text: string } | { key: string; kind: 'tool'; part: ToolPart }> {
+  const blocks: Array<{ key: string; kind: 'text'; text: string } | { key: string; kind: 'tool'; part: ToolPart }> = []
+  let buffer = ''
+
+  const flush = (index: number) => {
+    if (buffer.trim()) {
+      blocks.push({ key: `${message.id}:t${index}`, kind: 'text', text: buffer.trimEnd() })
+    }
+
+    buffer = ''
+  }
+
+  message.parts.forEach((part, index) => {
+    if (isToolPart(part)) {
+      flush(index)
+      blocks.push({ key: `${message.id}:tool${index}`, kind: 'tool', part: part as unknown as ToolPart })
+
+      return
+    }
+
+    const text = textOf(part)
+
+    if (text) {
+      buffer += (buffer ? '\n' : '') + text
+    }
+  })
+
+  flush(message.parts.length)
+
+  return blocks
 }
 
 /**
@@ -77,6 +110,10 @@ export function MobileApp() {
         fontFamily: 'system-ui, sans-serif'
       }}
     >
+      {/* Scoped keyframes for the running-tool pulse. Inline so the mobile shell
+          stays self-contained and does not depend on the desktop stylesheet. */}
+      <style>{'@keyframes hermes-pulse{0%,100%{opacity:1}50%{opacity:.35}}'}</style>
+
       <header
         style={{
           padding: '10px 14px',
@@ -101,27 +138,48 @@ export function MobileApp() {
       <main style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
         {messages.length === 0 && <p style={{ opacity: 0.5 }}>No messages yet — send one below.</p>}
 
-        {messages.map(message => (
-          <article
-            key={message.id}
-            style={{
-              alignSelf: message.role === 'user' ? 'flex-end' : 'flex-start',
-              maxWidth: '85%',
-              background: message.role === 'user' ? '#1d3b63' : '#17171a',
-              border: '1px solid #26262b',
-              borderRadius: 10,
-              padding: '8px 10px',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-              fontSize: 14,
-              lineHeight: 1.45
-            }}
-          >
-            <div style={{ fontSize: 11, opacity: 0.55, marginBottom: 4 }}>{message.role}</div>
-            {partsToText(message.parts as unknown[]) || <em style={{ opacity: 0.5 }}>(no text parts)</em>}
-            {message.error && <div style={{ color: '#ff8383', marginTop: 6 }}>{message.error}</div>}
-          </article>
-        ))}
+        {messages.map(message => {
+          const blocks = blocksOf(message)
+          const isUser = message.role === 'user'
+
+          return (
+            <div key={message.id} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {blocks.map(block =>
+                block.kind === 'tool' ? (
+                  <ToolCard key={block.key} part={block.part} running={busy} />
+                ) : (
+                  <article
+                    key={block.key}
+                    style={{
+                      alignSelf: isUser ? 'flex-end' : 'flex-start',
+                      maxWidth: '85%',
+                      background: isUser ? '#1d3b63' : '#17171a',
+                      border: '1px solid #26262b',
+                      borderRadius: 10,
+                      padding: '8px 10px',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      fontSize: 14,
+                      lineHeight: 1.45
+                    }}
+                  >
+                    {block.text}
+                  </article>
+                )
+              )}
+
+              {blocks.length === 0 && !message.error && (
+                <em style={{ alignSelf: isUser ? 'flex-end' : 'flex-start', opacity: 0.4, fontSize: 12 }}>
+                  {message.pending ? '…' : '(no content)'}
+                </em>
+              )}
+
+              {message.error && (
+                <div style={{ color: '#ff8383', fontSize: 13, alignSelf: 'flex-start' }}>{message.error}</div>
+              )}
+            </div>
+          )
+        })}
 
         <div ref={endRef} />
       </main>

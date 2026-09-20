@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query'
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { HashRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -81,5 +81,99 @@ describe('mobile shell (P4 kill criterion)', () => {
     const input = screen.getByPlaceholderText(/message hermes/i) as HTMLTextAreaElement
 
     expect(input.disabled).toBe(false)
+  })
+})
+
+describe('mobile tool-call cards', () => {
+  const toolPart = (over: Record<string, unknown> = {}) => ({
+    type: 'tool-call',
+    toolCallId: 'call-1',
+    toolName: 'terminal',
+    args: { command: 'ls -la /very/long/path/that/would/overflow/a/phone/screen' },
+    argsText: '{}',
+    ...over
+  })
+
+  function seedToolMessage(over: Record<string, unknown> = {}) {
+    act(() => {
+      setGatewayState('open')
+      setMessages([
+        {
+          id: 'a1',
+          role: 'assistant',
+          parts: [
+            { type: 'text', text: 'running that now' },
+            toolPart(over) as never
+          ]
+        }
+      ])
+    })
+  }
+
+  it('renders a tool call as a collapsed one-line card, not raw text', () => {
+    renderMobileShell()
+    seedToolMessage({ result: { stdout: 'total 0\nsecond line stays hidden\nthird line too' } })
+
+    // The surrounding narrative text still renders as a normal bubble...
+    expect(screen.getByText('running that now')).toBeTruthy()
+
+    // ...and the tool call is a button (tappable row), not inline text.
+    const card = screen.getByRole('button', { name: /terminal/i })
+
+    expect(card).toBeTruthy()
+
+    // Collapsed means ONE line: a first-line preview is shown, but the rest of
+    // the output is not in the transcript. This is the invariant that keeps a
+    // noisy tool run from burying the conversation on a phone.
+    expect(screen.queryByText(/second line stays hidden/)).toBeNull()
+    expect(screen.queryByText(/third line too/)).toBeNull()
+  })
+
+  it('opens a bottom sheet with the output when the card is tapped', () => {
+    renderMobileShell()
+    seedToolMessage({ result: { stdout: 'total 0\ndrwxr-xr-x 2 eric eric\n' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /terminal/i }))
+
+    // The sheet, not the transcript, is what shows the output.
+    expect(screen.getByText(/drwxr-xr-x/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /close/i })).toBeTruthy()
+  })
+
+  it('closes the sheet again, restoring the collapsed transcript', () => {
+    renderMobileShell()
+    // Multi-line on purpose: the collapsed card's subtitle legitimately echoes
+    // the FIRST output line, so asserting on it would be ambiguous. The second
+    // line exists only inside the sheet.
+    seedToolMessage({ result: { stdout: 'summary line\nvisible only in the sheet' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /terminal/i }))
+    expect(screen.getByText(/visible only in the sheet/)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /close/i }))
+    expect(screen.queryByText(/visible only in the sheet/)).toBeNull()
+  })
+
+  it('keeps a tool call in narrative order between text blocks', () => {
+    renderMobileShell()
+
+    act(() => {
+      setGatewayState('open')
+      setMessages([
+        {
+          id: 'a1',
+          role: 'assistant',
+          parts: [
+            { type: 'text', text: 'first I will look' },
+            toolPart({ result: {} }) as never,
+            { type: 'text', text: 'and here is what I found' }
+          ]
+        }
+      ])
+    })
+
+    const rendered = screen.getByText('first I will look').parentElement?.textContent ?? ''
+
+    expect(rendered.indexOf('first I will look')).toBeLessThan(rendered.indexOf('and here is what I found'))
   })
 })
