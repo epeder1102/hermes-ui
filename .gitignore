@@ -31,3 +31,7 @@ config.json
 
 .worktree
 .worktrees
+
+# local signing material - never commit
+hermes-debug.keystore
+hermes-keystore.b64

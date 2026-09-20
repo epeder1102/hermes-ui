@@ -106,6 +106,26 @@ jobs:
         working-directory: app
         run: bunx cap sync android
 
+      # Gradle creates ~/.android/debug.keystore on demand when it is absent, and
+      # every runner starts clean - so each build was signed with a DIFFERENT key
+      # and Android refused to update an already-installed APK ("App not
+      # installed"). Restoring one stable keystore keeps the signature constant
+      # so builds install over the top.
+      #
+      # If the secret is not set the build still succeeds with a throwaway key;
+      # it just cannot update an existing install. Failing here would be worse.
+      - name: Restore stable debug keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "${KEYSTORE_B64:-}" ]; then
+            mkdir -p ~/.android
+            printf '%s' "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+            echo "stable debug keystore restored ($(wc -c < ~/.android/debug.keystore) bytes)"
+          else
+            echo "::warning::ANDROID_KEYSTORE_B64 not set - APK gets a throwaway signature and will not update an existing install"
+          fi
+
       - name: Build debug APK
         working-directory: app/android
         run: ./gradlew assembleDebug --no-daemon
