@@ -61,12 +61,33 @@ Priority order is in the P4 section below. Short version, most valuable first:
 Eric's stated priority is vibe-coding from the phone with the **dev** profile: reading tool output and
 diffs, and approving actions. Weight everything toward that; other panels can stay rough.
 
+**Evaluate this deliberately before writing UI code — it has never been exercised.** The whole
+decision to keep this codebase rests on the protocol layer being the expensive asset and the shell
+being replaceable. So: can the message stream + composer be mounted in a standalone mobile route
+*without* rewriting the stores? If yes, proceed as planned. **If the chat state turns out to be
+entangled with the desktop three-pane layout, the call is to keep the protocol layer as a library and
+rebuild the shell - NOT to slide into a responsive retrofit of the desktop layout.** A retrofit is the
+failure mode here: it looks cheaper every individual step and ends up costing more than the rebuild.
+Spend a couple of hours answering this first.
+
+### Context that lives outside this repo
+
+- **`/home/claude/CLAUDE.md`** (auto-loaded by Claude Code on the Proxmox host) has a dated
+  2026-09-19 section covering the CT 114 changes: the gateway-vs-dashboard distinction, Tailscale in
+  CT 114, the bind change, `HERMES_WEB_DIST`, every backup path, and the "don't press Update Hermes"
+  warning. That is the homelab source of truth - update it there, not here, for infra changes.
+- **`/home/claude/.claude/projects/-home-claude/memory/project-hermes-mobile-app.md`** holds the
+  three architectures that failed on device and why each looked correct. Worth reading before
+  proposing any change to how the app reaches the gateway.
+
 ### Outstanding, not blocking P4
 
 - **Dashboard password is still `hermes`/`hermes`** — Eric's call. Rotation script staged, unrun:
   `sudo pct exec 114 -- /usr/local/lib/hermes-agent/venv/bin/python /root/rotate-dashboard-auth.py`
-- `ANDROID_KEYSTORE_B64` repo secret not yet added, so a new APK needs uninstall-then-install.
-  Base64 is at `~eric/hermes-keystore.b64` on CT 117.
+- `ANDROID_KEYSTORE_B64` repo secret **added 2026-09-19**, so APKs from now on install over the top.
+  The keystore itself is `~eric/hermes-debug.keystore` on CT 117 (gitignored - the fork is public).
+  **It is the only thing that lets future APKs update in place**; if CT 117 is rebuilt without a copy,
+  every later build needs a full uninstall/reinstall.
 - `bun.lock` is stale (CI runs unpinned `bun install`); commit a resolved lockfile for reproducibility.
 - **Do not press the in-app "Update Hermes" button** — see the version-skew risk below.
 - P5 (biometric gate, Keystore credentials, `FLAG_SECURE`) is the reason the APK exists at all; the
