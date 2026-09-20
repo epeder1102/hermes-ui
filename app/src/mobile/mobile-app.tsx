@@ -1,10 +1,13 @@
 import { useStore } from '@nanostores/react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ToolPart } from '@/components/assistant-ui/tool/fallback-model'
 import type { ChatMessage, ChatMessagePart } from '@/lib/chat-messages'
 import { $awaitingResponse, $busy, $gatewayState, $messages } from '@/store/session'
 
+import { CodeBlock } from './code-block'
+import { DiffView } from './diff-view'
+import { looksLikeDiff, splitMarkdownSegments } from './markdown-segments'
 import { switchShellMode } from './shell-mode'
 import { ToolCard } from './tool-card'
 import { useChatEngine } from './use-chat-engine'
@@ -118,7 +121,7 @@ export function MobileApp() {
       <header
         style={{
           padding: '10px 14px',
-          borderBottom: '1px solid #26262b',
+          borderBottom: '1px solid var(--dt-border, #26262b)',
           display: 'flex',
           gap: 10,
           alignItems: 'center',
@@ -160,23 +163,7 @@ export function MobileApp() {
                 block.kind === 'tool' ? (
                   <ToolCard key={block.key} part={block.part} running={busy} />
                 ) : (
-                  <article
-                    key={block.key}
-                    style={{
-                      alignSelf: isUser ? 'flex-end' : 'flex-start',
-                      maxWidth: '85%',
-                      background: isUser ? 'color-mix(in srgb, var(--dt-primary, #4a7fd0) 16%, var(--dt-card, #17171a))' : 'var(--dt-card, #17171a)',
-                      border: '1px solid #26262b',
-                      borderRadius: 10,
-                      padding: '8px 10px',
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                      fontSize: 14,
-                      lineHeight: 1.45
-                    }}
-                  >
-                    {block.text}
-                  </article>
+                  <MessageText isUser={isUser} key={block.key} text={block.text} />
                 )
               )}
 
@@ -202,7 +189,7 @@ export function MobileApp() {
           gap: 8,
           padding: 10,
           paddingBottom: 'max(10px, env(safe-area-inset-bottom))',
-          borderTop: '1px solid #26262b'
+          borderTop: '1px solid var(--dt-border, #26262b)'
         }}
       >
         <textarea
@@ -215,7 +202,7 @@ export function MobileApp() {
             resize: 'none',
             background: 'var(--dt-card, #131316)',
             color: 'inherit',
-            border: '1px solid #2c2c33',
+            border: '1px solid var(--dt-border, #2c2c33)',
             borderRadius: 8,
             padding: '10px 12px',
             fontSize: 16,
@@ -238,10 +225,59 @@ export function MobileApp() {
   )
 }
 
+/**
+ * One prose block from a message.
+ *
+ * Fenced code is lifted OUT of the chat bubble and rendered full-width: a code
+ * block inside an 85%-wide bubble has no room to scroll horizontally, which is
+ * the whole mechanism that keeps code readable here. A fenced block that is
+ * actually a unified diff is routed to the diff renderer instead, so a patch
+ * pasted into a reply reads the same as a patch produced by a tool.
+ */
+function MessageText({ isUser, text }: { isUser: boolean; text: string }) {
+  const segments = useMemo(() => splitMarkdownSegments(text), [text])
+
+  return (
+    <>
+      {segments.map((segment, index) => {
+        if (segment.kind === 'code') {
+          return looksLikeDiff(segment.language, segment.code) ? (
+            <DiffView diff={segment.code} key={index} />
+          ) : (
+            <CodeBlock code={segment.code} key={index} language={segment.language} />
+          )
+        }
+
+        return (
+          <article
+            key={index}
+            style={{
+              alignSelf: isUser ? 'flex-end' : 'flex-start',
+              maxWidth: '85%',
+              background: isUser
+                ? 'color-mix(in srgb, var(--dt-primary, #4a7fd0) 16%, var(--dt-card, #17171a))'
+                : 'var(--dt-card, #17171a)',
+              border: '1px solid var(--dt-border, #26262b)',
+              borderRadius: 10,
+              padding: '8px 10px',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              fontSize: 14,
+              lineHeight: 1.45
+            }}
+          >
+            {segment.text}
+          </article>
+        )
+      })}
+    </>
+  )
+}
+
 const btn: React.CSSProperties = {
   background: 'var(--dt-secondary, #2a2a31)',
   color: 'var(--foreground, #e7e7ea)',
-  border: '1px solid #3a3a44',
+  border: '1px solid var(--dt-border, #3a3a44)',
   borderRadius: 8,
   padding: '10px 14px',
   fontSize: 14,

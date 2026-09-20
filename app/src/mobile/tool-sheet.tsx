@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import type { ToolView } from '@/components/assistant-ui/tool/fallback-model'
 
+import { DiffView } from './diff-view'
+
 /** Lines rendered before the output is truncated behind "Show all". */
 const LINE_BUDGET = 200
 
@@ -74,7 +76,7 @@ function OutputBlock({ follow, label, text }: OutputBlockProps) {
             maxHeight: '38vh',
             overflow: 'auto',
             background: 'var(--midground, #0f0f11)',
-            border: '1px solid #26262b',
+            border: '1px solid var(--dt-border, #26262b)',
             borderRadius: 8,
             padding: 10,
             fontSize: 12,
@@ -106,7 +108,7 @@ function OutputBlock({ follow, label, text }: OutputBlockProps) {
               bottom: 10,
               ...linkBtn,
               background: 'var(--dt-secondary, #2a2a31)',
-              border: '1px solid #3a3a44',
+              border: '1px solid var(--dt-border, #3a3a44)',
               borderRadius: 999,
               padding: '6px 12px'
             }}
@@ -167,7 +169,7 @@ export function ToolSheet({ onClose, pending, view }: { onClose: () => void; pen
           background: 'var(--dt-popover, #141417)',
           borderTopLeftRadius: 14,
           borderTopRightRadius: 14,
-          border: '1px solid #26262b',
+          border: '1px solid var(--dt-border, #26262b)',
           padding: 14,
           paddingBottom: 'max(14px, env(safe-area-inset-bottom))',
           color: 'var(--foreground, #e7e7ea)'
@@ -200,7 +202,12 @@ export function ToolSheet({ onClose, pending, view }: { onClose: () => void; pen
         )}
 
         <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
-          {view.inlineDiff && <OutputBlock follow={false} label="Diff" text={view.inlineDiff} />}
+          {view.inlineDiff && (
+            <section style={{ display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0 }}>
+              <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, opacity: 0.5 }}>Diff</div>
+              <DiffView diff={view.inlineDiff} />
+            </section>
+          )}
 
           {hasStreams ? (
             <>

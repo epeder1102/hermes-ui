@@ -71,7 +71,7 @@ export function ToolCard({ part, running }: { part: ToolPart; running: boolean }
           minHeight: 44,
           padding: '8px 10px',
           background: 'var(--dt-card, #131316)',
-          border: '1px solid #26262b',
+          border: '1px solid var(--dt-border, #26262b)',
           borderRadius: 8,
           color: 'var(--foreground, #e7e7ea)',
           font: 'inherit',
