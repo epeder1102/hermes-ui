@@ -27,15 +27,25 @@ const config: CapacitorConfig = {
     allowMixedContent: false
   },
   server: {
-    // MUST be 'http', not 'https'. The gateway is served over PLAINTEXT http
-    // (safe, because the only path to it is the Tailscale WireGuard tunnel -
-    // see MOBILE-PLAN.md 3.2). An 'https://localhost' page is a secure context,
-    // so the WebView would block every call to http://<tailnet-ip>:9119 as
-    // mixed content, and would refuse a ws:// socket from a secure origin.
-    // 'http://localhost' still matches the server's CORS allowlist, and
-    // Chromium treats http://localhost as a potentially-trustworthy origin, so
-    // secure-context APIs (crypto.subtle, MediaRecorder) keep working.
-    androidScheme: 'http'
+    // The gateway serves THIS bundle via HERMES_WEB_DIST, so the WebView loads
+    // the UI from the gateway's own origin. Everything is then same-origin:
+    // no CORS, no SameSite=Lax cookie problem, no mixed content, no WebSocket
+    // origin question, and no need to defeat the web bridge's deliberate
+    // "gateway must be same-origin" guard (gateways.ts:classifyGatewayReach).
+    //
+    // Loading the local bundle and calling the gateway cross-origin does NOT
+    // work: the guard rejects it, and even bypassed, the dashboard's host-only
+    // SameSite=Lax session cookie is not sent cross-origin.
+    //
+    // Consequence worth knowing: the APK is a thin shell. UI changes ship by
+    // redeploying dist/ to CT 114 - no rebuild, no reinstall.
+    //
+    // Caveat: the tailnet address is baked in here. If CT 114's Tailscale IP
+    // changes, this, the dashboard bind, and network_security_config.xml all
+    // have to move together.
+    androidScheme: 'http',
+    url: 'http://100.104.221.85:9119',
+    cleartext: true
   }
 }
 
