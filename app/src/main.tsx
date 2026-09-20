@@ -19,6 +19,7 @@ import { installClipboardShim } from './lib/clipboard'
 import { queryClient } from './lib/query-client'
 import { initQueryPersistence } from './lib/query-persist'
 import { MobileApp } from './mobile/mobile-app'
+import { resolveShellMode } from './mobile/shell-mode'
 import { registerPwa } from './pwa/register'
 import { initShellSnapshot } from './store/shell-snapshot'
 import { initSidebarCache } from './store/sidebar-cache'
@@ -42,12 +43,11 @@ if (import.meta.env.MODE !== 'production' || import.meta.env.VITE_PERF_PROBE ===
   import('./app/chat/perf-probe')
 }
 
-// P4 probe: `?m=1` mounts the standalone mobile shell instead of the desktop
-// three-pane controller. Read from location.search (not the router) for the same
-// reason the overlay flag is — it must resolve before React mounts. The desktop
-// path below is untouched, so both shells ship in one bundle and can be A/B'd on
-// the same device by toggling the flag.
-const isMobileShell = new URLSearchParams(window.location.search).get('m') === '1'
+// Which shell mounts is resolved before React, for the same reason the overlay
+// flag is. See mobile/shell-mode.ts: the installed APK loads a fixed URL with no
+// address bar, so this must NOT depend on a query parameter alone. The desktop
+// path below is untouched — both shells ship in one bundle.
+const isMobileShell = resolveShellMode() === 'mobile'
 
 if (new URLSearchParams(window.location.search).get('win') === 'overlay') {
   void import('./app/pet-overlay/overlay-root').then(({ mountPetOverlay }) => mountPetOverlay())

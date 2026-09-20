@@ -73,17 +73,17 @@ function OutputBlock({ follow, label, text }: OutputBlockProps) {
             margin: 0,
             maxHeight: '38vh',
             overflow: 'auto',
-            background: '#0f0f11',
+            background: 'var(--midground, #0f0f11)',
             border: '1px solid #26262b',
             borderRadius: 8,
             padding: 10,
             fontSize: 12,
             lineHeight: 1.5,
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontFamily: 'var(--dt-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
             // No wrapping: wrapped terminal output and diffs are unreadable.
             // Horizontal scroll is the correct trade on a phone.
             whiteSpace: 'pre',
-            color: '#d4d4d8'
+            color: 'var(--foreground, #d4d4d8)'
           }}
         >
           {body}
@@ -105,7 +105,7 @@ function OutputBlock({ follow, label, text }: OutputBlockProps) {
               right: 10,
               bottom: 10,
               ...linkBtn,
-              background: '#2a2a31',
+              background: 'var(--dt-secondary, #2a2a31)',
               border: '1px solid #3a3a44',
               borderRadius: 999,
               padding: '6px 12px'
@@ -164,16 +164,16 @@ export function ToolSheet({ onClose, pending, view }: { onClose: () => void; pen
           display: 'flex',
           flexDirection: 'column',
           gap: 10,
-          background: '#141417',
+          background: 'var(--dt-popover, #141417)',
           borderTopLeftRadius: 14,
           borderTopRightRadius: 14,
           border: '1px solid #26262b',
           padding: 14,
           paddingBottom: 'max(14px, env(safe-area-inset-bottom))',
-          color: '#e7e7ea'
+          color: 'var(--foreground, #e7e7ea)'
         }}
       >
-        <div aria-hidden style={{ width: 36, height: 4, borderRadius: 2, background: '#3a3a44', alignSelf: 'center' }} />
+        <div aria-hidden style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--dt-border, #3a3a44)', alignSelf: 'center' }} />
 
         <header style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           <strong style={{ fontSize: 15 }}>{view.title}</strong>
@@ -192,7 +192,7 @@ export function ToolSheet({ onClose, pending, view }: { onClose: () => void; pen
               whiteSpace: 'nowrap',
               fontSize: 12,
               opacity: 0.7,
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace'
+              fontFamily: 'var(--dt-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)'
             }}
           >
             {view.subtitle}
@@ -225,7 +225,7 @@ export function ToolSheet({ onClose, pending, view }: { onClose: () => void; pen
 const linkBtn: React.CSSProperties = {
   background: 'transparent',
   border: 'none',
-  color: '#8ab4ff',
+  color: 'var(--dt-primary, #8ab4ff)',
   font: 'inherit',
   fontSize: 13,
   padding: '6px 0',

@@ -5,6 +5,7 @@ import type { ToolPart } from '@/components/assistant-ui/tool/fallback-model'
 import type { ChatMessage, ChatMessagePart } from '@/lib/chat-messages'
 import { $awaitingResponse, $busy, $gatewayState, $messages } from '@/store/session'
 
+import { switchShellMode } from './shell-mode'
 import { ToolCard } from './tool-card'
 import { useChatEngine } from './use-chat-engine'
 
@@ -105,9 +106,9 @@ export function MobileApp() {
         display: 'flex',
         flexDirection: 'column',
         height: '100dvh',
-        background: '#0b0b0c',
-        color: '#e7e7ea',
-        fontFamily: 'system-ui, sans-serif'
+        background: 'var(--background, #0b0b0c)',
+        color: 'var(--foreground, #e7e7ea)',
+        fontFamily: 'var(--dt-font-sans, system-ui, sans-serif)'
       }}
     >
       {/* Scoped keyframes for the running-tool pulse. Inline so the mobile shell
@@ -133,6 +134,17 @@ export function MobileApp() {
         <button onClick={() => startFreshSessionDraft()} style={{ marginLeft: 'auto', ...btn }} type="button">
           New
         </button>
+
+        {/* The only way back to the desktop shell from inside the APK, which has
+            no address bar to append ?m=0 to. */}
+        <button
+          onClick={() => switchShellMode('desktop')}
+          style={{ ...btn, padding: '10px 10px', opacity: 0.75 }}
+          title="Switch to the desktop layout"
+          type="button"
+        >
+          Desktop
+        </button>
       </header>
 
       <main style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -153,7 +165,7 @@ export function MobileApp() {
                     style={{
                       alignSelf: isUser ? 'flex-end' : 'flex-start',
                       maxWidth: '85%',
-                      background: isUser ? '#1d3b63' : '#17171a',
+                      background: isUser ? 'color-mix(in srgb, var(--dt-primary, #4a7fd0) 16%, var(--dt-card, #17171a))' : 'var(--dt-card, #17171a)',
                       border: '1px solid #26262b',
                       borderRadius: 10,
                       padding: '8px 10px',
@@ -175,7 +187,7 @@ export function MobileApp() {
               )}
 
               {message.error && (
-                <div style={{ color: '#ff8383', fontSize: 13, alignSelf: 'flex-start' }}>{message.error}</div>
+                <div style={{ color: 'var(--dt-destructive, #ff8383)', fontSize: 13, alignSelf: 'flex-start' }}>{message.error}</div>
               )}
             </div>
           )
@@ -201,7 +213,7 @@ export function MobileApp() {
           style={{
             flex: 1,
             resize: 'none',
-            background: '#131316',
+            background: 'var(--dt-card, #131316)',
             color: 'inherit',
             border: '1px solid #2c2c33',
             borderRadius: 8,
@@ -227,8 +239,8 @@ export function MobileApp() {
 }
 
 const btn: React.CSSProperties = {
-  background: '#2a2a31',
-  color: '#e7e7ea',
+  background: 'var(--dt-secondary, #2a2a31)',
+  color: 'var(--foreground, #e7e7ea)',
   border: '1px solid #3a3a44',
   borderRadius: 8,
   padding: '10px 14px',

@@ -70,10 +70,10 @@ export function ToolCard({ part, running }: { part: ToolPart; running: boolean }
           width: '100%',
           minHeight: 44,
           padding: '8px 10px',
-          background: '#131316',
+          background: 'var(--dt-card, #131316)',
           border: '1px solid #26262b',
           borderRadius: 8,
-          color: '#e7e7ea',
+          color: 'var(--foreground, #e7e7ea)',
           font: 'inherit',
           fontSize: 13,
           textAlign: 'left'
@@ -106,7 +106,7 @@ export function ToolCard({ part, running }: { part: ToolPart; running: boolean }
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
             opacity: 0.6,
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontFamily: 'var(--dt-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
             fontSize: 12
           }}
         >
