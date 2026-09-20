@@ -61,14 +61,59 @@ Priority order is in the P4 section below. Short version, most valuable first:
 Eric's stated priority is vibe-coding from the phone with the **dev** profile: reading tool output and
 diffs, and approving actions. Weight everything toward that; other panels can stay rough.
 
-**Evaluate this deliberately before writing UI code — it has never been exercised.** The whole
-decision to keep this codebase rests on the protocol layer being the expensive asset and the shell
-being replaceable. So: can the message stream + composer be mounted in a standalone mobile route
-*without* rewriting the stores? If yes, proceed as planned. **If the chat state turns out to be
-entangled with the desktop three-pane layout, the call is to keep the protocol layer as a library and
-rebuild the shell - NOT to slide into a responsive retrofit of the desktop layout.** A retrofit is the
-failure mode here: it looks cheaper every individual step and ends up costing more than the rebuild.
-Spend a couple of hours answering this first.
+### KILL CRITERION — ANSWERED 2026-09-20: **yes, proceed. Do not rebuild, do not retrofit.**
+
+The question was whether the message stream + composer could be mounted in a standalone mobile route
+*without rewriting the stores*. They can. Evidence, weakest to strongest:
+
+1. **No layout coupling in the data path.** None of the engine hooks — `use-session-state-cache`,
+   `use-message-stream`, `use-prompt-actions`, `use-composer-actions`, `use-gateway-boot`,
+   `use-gateway-request` — import `store/layout`, `store/panes` or the desktop controller. The only
+   two hits anywhere near them are benign: `$pinnedSessionIds` is a `persistentAtom` of session ids
+   (data, not pane geometry), and `isSecondaryWindow`/`isWatchWindow` are pure `location.search`
+   predicates that return `false` in a normal browser.
+2. **State is nanostores, not React context.** `$messages`, `$busy`, `$activeSessionId` are
+   module-level atoms, so a sibling route subscribes to identical state with zero provider plumbing.
+   The root providers (QueryClient, I18n, Theme, Haptics, HashRouter) are generic and already wrap
+   everything.
+3. **The codebase already does this.** `useGatewayRequest()` is called today from `floating-pet.tsx`,
+   `pet-settings.tsx` and `pet-generate-overlay.tsx` — components outside the desktop controller
+   tree that get a working gateway. The socket is owned by the `$gateway` singleton, **not** by
+   `desktop-controller.tsx`.
+4. **It compiles, mounts and streams.** `app/src/mobile/use-chat-engine.ts` wires the same seven
+   hooks in the same order; `app/src/mobile/mobile-app.tsx` renders `$messages` + a composer calling
+   `submitText`. `tsc` clean, and `app/src/mobile/mobile-app.test.tsx` (3 jsdom tests) proves the
+   engine mounts standalone, that store writes render in it, and that `$gatewayState` drives the
+   composer.
+
+**The only change to existing code is 9 lines in `main.tsx`** adding a `?m=1` flag. No store, no
+component, no controller file was modified — verified with `git status`. Both shells ship in one
+bundle, so the phone can A/B them by toggling the flag.
+
+What `desktop-controller.tsx` (1,418 lines) owns that a mobile shell does **not** need:
+`usePreviewRouting` (preview dev-server), `useCwdActions`/`useHermesConfig` (project branch + voice),
+`useRouteResume`, `useKeybinds`, and the pet/starmap/overlay wiring. Its coupling is **orchestration,
+not layout** — ~150 lines of hook wiring, which is exactly what `use-chat-engine.ts` extracts.
+
+**Probe URL:** `http://100.104.221.85:9119/?m=1` (deliberately unstyled — it is the proof, not the
+feature). Branch `feat/mobile-p4-chat-surface`, commit `47da719`, pushed.
+
+### ⚠️ CT 117 build environment — the documented heap flag was a trap (fixed 2026-09-20)
+
+`NODE_OPTIONS=--max-old-space-size=1400` was **fighting the container limit**. CT 117 was capped at
+1024MB, so V8 believed it had 1400MB of old-space and never GC'd before the cgroup started swapping.
+A `vite build` thrashed so hard that both `ssh` and `pct exec` stopped responding for ~20 minutes.
+
+- **CT 117 `memory` raised 1024 → 3072MB** (live, no reboot; backup `/root/117.conf.bak.20260920-prebuild-ram`
+  on the Proxmox host). The build went from thrashing-indefinitely to a few minutes. Use
+  `--max-old-space-size=2200` now.
+- **CT 117 disk was at 99% (119MB free)** — cleared `~/.npm/_cacache` (1.8GB of regenerable package
+  cache, no project files) → 80% / 1.6GB free.
+- **Deploy hygiene:** the documented `tar cz | tar xz` redeploy **never removes stale assets**, so
+  orphaned `index-*.js` chunks accumulate in `/opt/hermes-ui/dist` forever. Harmless to serving
+  (index.html names the live chunk) but it bloats the dir and the PWA precache. Prefer extracting to
+  a temp dir and swapping, or `rsync --delete`. Pre-P4 backup of the deployed bundle:
+  `/opt/hermes-ui/dist.bak.20260920-prep4` inside CT 114.
 
 ### Context that lives outside this repo
 
