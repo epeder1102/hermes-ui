@@ -3,8 +3,8 @@ import type { CapacitorConfig } from '@capacitor/cli'
 /**
  * Capacitor shell config (MOBILE-PLAN.md P3).
  *
- * `androidScheme: 'https'` makes the WebView serve the bundle from the origin
- * `https://localhost`. That is deliberate and load-bearing: the Hermes dashboard
+ * `androidScheme: 'http'` makes the WebView serve the bundle from the origin
+ * `http://localhost`. That is deliberate and load-bearing: the Hermes dashboard
  * hardcodes its CORS allowlist to
  *
  *     ^https?://(localhost|127\.0\.0\.1)(:\d+)?$        (web_server.py:286)
@@ -27,7 +27,15 @@ const config: CapacitorConfig = {
     allowMixedContent: false
   },
   server: {
-    androidScheme: 'https'
+    // MUST be 'http', not 'https'. The gateway is served over PLAINTEXT http
+    // (safe, because the only path to it is the Tailscale WireGuard tunnel -
+    // see MOBILE-PLAN.md 3.2). An 'https://localhost' page is a secure context,
+    // so the WebView would block every call to http://<tailnet-ip>:9119 as
+    // mixed content, and would refuse a ws:// socket from a secure origin.
+    // 'http://localhost' still matches the server's CORS allowlist, and
+    // Chromium treats http://localhost as a potentially-trustworthy origin, so
+    // secure-context APIs (crypto.subtle, MediaRecorder) keep working.
+    androidScheme: 'http'
   }
 }
 
