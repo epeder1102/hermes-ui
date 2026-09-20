@@ -18,6 +18,7 @@ import { I18nProvider } from './i18n'
 import { installClipboardShim } from './lib/clipboard'
 import { queryClient } from './lib/query-client'
 import { initQueryPersistence } from './lib/query-persist'
+import { MobileApp } from './mobile/mobile-app'
 import { registerPwa } from './pwa/register'
 import { initShellSnapshot } from './store/shell-snapshot'
 import { initSidebarCache } from './store/sidebar-cache'
@@ -40,6 +41,13 @@ initQueryPersistence()
 if (import.meta.env.MODE !== 'production' || import.meta.env.VITE_PERF_PROBE === '1') {
   import('./app/chat/perf-probe')
 }
+
+// P4 probe: `?m=1` mounts the standalone mobile shell instead of the desktop
+// three-pane controller. Read from location.search (not the router) for the same
+// reason the overlay flag is — it must resolve before React mounts. The desktop
+// path below is untouched, so both shells ship in one bundle and can be A/B'd on
+// the same device by toggling the flag.
+const isMobileShell = new URLSearchParams(window.location.search).get('m') === '1'
 
 if (new URLSearchParams(window.location.search).get('win') === 'overlay') {
   void import('./app/pet-overlay/overlay-root').then(({ mountPetOverlay }) => mountPetOverlay())
@@ -65,7 +73,7 @@ if (new URLSearchParams(window.location.search).get('win') === 'overlay') {
                     both freeze for seconds despite the main thread being free.
                     Disabling transitions makes navigate() commit at default priority. */}
                 <HashRouter useTransitions={false}>
-                  <App />
+                  {isMobileShell ? <MobileApp /> : <App />}
                 </HashRouter>
               </HapticsProvider>
             </ThemeProvider>
