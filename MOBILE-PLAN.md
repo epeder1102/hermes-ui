@@ -7,6 +7,73 @@
 
 ---
 
+## START HERE — session handoff (last updated 2026-09-19)
+
+**Status: P0–P3 done and validated on real hardware. P4 is next and is the main body of work.**
+
+### What exists right now
+
+- **It works.** The app runs on Eric's Galaxy S26 over Tailscale: loads, signs in, streams replies.
+- **Live URL:** `http://100.104.221.85:9119` — any browser on the tailnet, installable as a PWA.
+  Login `hermes` / `hermes` (Eric's deliberate choice to defer rotation; see "Outstanding" below).
+- **Repo:** `/home/eric/projects/hermes-ui` on CT 117 (devbox). Branch
+  `feat/mobile-p1-credential-seam`, 10 commits, all pushed. `origin` = Eric's fork
+  `github.com/epeder1102/hermes-ui`; `upstream` = `przbadu/hermes-ui` (keep it, `UPSTREAM.md`
+  documents a re-sync workflow).
+- **Android APK** builds on GitHub Actions (`.github/workflows/android.yml`), artifact
+  `hermes-debug-apk`. Installed on the S26.
+
+### The one architectural fact to absorb first
+
+**The gateway serves this app's bundle.** `hermes dashboard` on CT 114 runs with
+`HERMES_WEB_DIST=/opt/hermes-ui/dist`, so the UI and the API share one origin. Do not try to make the
+app call the gateway cross-origin — §3.1 and P3 explain why three plausible designs fail.
+
+**Therefore UI changes do NOT need an APK rebuild.** Build and redeploy:
+
+```
+ssh eric@192.168.10.160 'cd ~/projects/hermes-ui/app && NODE_OPTIONS=--max-old-space-size=1400 npx vite build'
+ssh eric@192.168.10.160 'tar cz -C ~/projects/hermes-ui/app dist' | sudo pct exec 114 -- tar xz -C /opt/hermes-ui
+```
+
+Then just reload the page on the phone. Seconds, not minutes. The APK is a thin shell around that URL.
+
+### Commands that will otherwise waste your time
+
+- **Every** `tsc` / `vitest` / `vite build` on CT 117 needs `NODE_OPTIONS=--max-old-space-size=1400`,
+  or Node OOMs against its default heap cap on a 1 GB box. A full `vitest` run takes ~4 minutes.
+- Three test files fail on upstream `main` and are excluded by name in CI — see "Inherited test
+  debt". Do not widen that into a blanket skip.
+- CT 117 is at **~98% disk**. Do not install the Android SDK there; that is why CI exists.
+
+### What P4 actually is
+
+The mobile chat surface, built as a **separate mobile route shell** — NOT a responsive retrofit of
+the desktop three-pane layout (§1.1 explains why, including the kill criteria). Reuse the protocol
+layer, stores and message/tool-card components; write a new shell around them.
+
+Priority order is in the P4 section below. Short version, most valuable first:
+1. Tool-call cards (collapsed one-liners, expand into a bottom sheet — never inline)
+2. Code/diff rendering (per-hunk collapse, no-wrap default, virtualize the list)
+3. Approval prompts (undismissable sheet, full command text, never middle-elided)
+4. Composer (keyboard-aware, safe-area, draft persistence)
+
+Eric's stated priority is vibe-coding from the phone with the **dev** profile: reading tool output and
+diffs, and approving actions. Weight everything toward that; other panels can stay rough.
+
+### Outstanding, not blocking P4
+
+- **Dashboard password is still `hermes`/`hermes`** — Eric's call. Rotation script staged, unrun:
+  `sudo pct exec 114 -- /usr/local/lib/hermes-agent/venv/bin/python /root/rotate-dashboard-auth.py`
+- `ANDROID_KEYSTORE_B64` repo secret not yet added, so a new APK needs uninstall-then-install.
+  Base64 is at `~eric/hermes-keystore.b64` on CT 117.
+- `bun.lock` is stale (CI runs unpinned `bun install`); commit a resolved lockfile for reproducibility.
+- **Do not press the in-app "Update Hermes" button** — see the version-skew risk below.
+- P5 (biometric gate, Keystore credentials, `FLAG_SECURE`) is the reason the APK exists at all; the
+  P1 `credential-store.ts` seam is already in place for it.
+
+---
+
 ## 0. Recon findings that changed this plan (2026-09-19)
 
 These were verified live against CT 114 and CT 117 before writing anything. Three of them
