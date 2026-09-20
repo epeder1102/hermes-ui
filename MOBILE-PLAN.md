@@ -336,12 +336,36 @@ The security core. Before any UI work, because everything depends on it.
   currently reaches `192.168.10.130:9119` over the LAN. Both are stop-and-ask changes. Use Tailscale's
   ACL tests/preview before saving, keep an explicit laptop allow rule, and keep a host console open.
 
-### P3 — Capacitor shell, minimum viable ← the de-risking milestone
-Wrap the *existing, unmodified* web app. No layout work. Goal: from the S26 on cellular with
-Tailscale on, hold a real streaming conversation with the dev profile, watch a tool call execute on
-CT 117, and approve it. It will look like a cramped desktop app. Ship it anyway — it proves the whole
-architecture end to end, is usable from day one, and is where §1.1's kill criteria get decided on
-evidence.
+### P3 — Capacitor shell — DONE 2026-09-19, validated on device
+
+**Validated end to end on the Galaxy S26 over Tailscale:** UI loads, sign-in works, the status bar
+reports "Gateway ready" (WebSocket connected), and a message to the agent streamed a reply back.
+
+**Architecture changed during P3 — read this before P4.** The original design (local bundle in the
+APK, calling the gateway cross-origin) does not work, for two stacked reasons found on device:
+
+1. `gateways.ts:classifyGatewayReach()` is a deliberate guard that refuses a cross-origin gateway in
+   the web build ("Gateway must be same-origin"). It is correct, not a bug.
+2. Even bypassed, the dashboard's session cookie is host-only `SameSite=Lax`, which a browser will
+   not send cross-origin. The app would pass the guard and then fail to authenticate.
+
+Resolved by using the model the project recommends: **the gateway serves this bundle** via
+`HERMES_WEB_DIST` (`web_server.py:116`), so UI and API share one origin and the entire class of
+problem disappears - no CORS, no cookie SameSite, no mixed content, no WS origin question.
+
+Deployed: bundle at `/opt/hermes-ui/dist` on CT 114; `Environment="HERMES_WEB_DIST=/opt/hermes-ui/dist"`
+in `hermes-dashboard.service` (backup `.bak.20260919-webdist`). The stock bundle is untouched on
+disk - removing the env var reverts. Capacitor sets `server.url` to the gateway.
+
+**Consequences for P4, both good:**
+- The APK is a thin shell. **UI changes ship by rebuilding `dist/` and copying it to CT 114 - no APK
+  rebuild, no reinstall.** Redeploy:
+  `ssh eric@192.168.10.160 'tar cz -C ~/projects/hermes-ui/app dist' | sudo pct exec 114 -- tar xz -C /opt/hermes-ui`
+- The UI is now also a desktop PWA for free: any tailnet browser can open
+  `http://100.104.221.85:9119`. P7 is effectively already satisfied, without the reverse proxy.
+
+Also learned: `androidScheme` must be `http`, not `https` - an https page cannot call the plaintext
+gateway (mixed content) nor open a `ws://` socket.
 
 ### P4 — Mobile chat surface ← where the quality goes
 A new mobile route shell. Priority order within it:
@@ -399,6 +423,18 @@ server changes. Justify it or skip it — it is the only new always-on listener 
   acquisition behind a mutex so a reconnect storm cannot burn tickets in parallel. Treat
   ticket-reuse/4403 as full re-auth, not retry. Exponential backoff with jitter.
 - **Mobile app lifecycle killing sockets.** See P6. Assume the socket is dead on every resume.
+
+**Backend/frontend version skew (found 2026-09-19)**
+- The UI reports "Backend out of date". It is real: backend is `v0.17.0 (2026.6.19)`, the UI is built
+  from upstream desktop code of 2026-07-20 with Bot Mode from `v2026.8.18`.
+- **Do not press the in-app "Update Hermes" button.** This install is heavily customised
+  (`upstream 7f3e0bb5 · local 88b3d863 (+12899 carried commits)`), and an update would touch the four
+  gateway profiles and their Telegram bots, the deliberately pinned Mnemosyne 3.14.0, the Obsidian
+  MCP tunnel, the openai-codex credential pool and `dashboard.basic_auth`. CLAUDE.md also records
+  `hermes update` hanging in D-state here.
+- Everything exercised so far works. Treat it as advisory; if a specific feature misbehaves, diagnose
+  that feature. A backend upgrade is its own planned job (vzdump first, verify all four profiles with
+  real `hermes -z` calls after).
 
 **Inherited test debt (found 2026-09-19)**
 - Five tests across three files fail on upstream `main` as extracted, with none of this project's
