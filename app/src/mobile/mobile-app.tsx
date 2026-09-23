@@ -6,6 +6,7 @@ import type { ChatMessage, ChatMessagePart } from '@/lib/chat-messages'
 import { $activeGatewayProfile, $newChatProfile, normalizeProfileKey } from '@/store/profile'
 import { $awaitingResponse, $busy, $gatewayState, $messages } from '@/store/session'
 
+import { MobileApprovalSheet } from './approval-sheet'
 import { CodeBlock } from './code-block'
 import { DiffView } from './diff-view'
 import { looksLikeDiff, splitMarkdownSegments } from './markdown-segments'
@@ -255,6 +256,7 @@ export function MobileApp() {
       </footer>
 
       {profileOpen && <ProfileSheet onClose={() => setProfileOpen(false)} />}
+      <MobileApprovalSheet />
     </div>
   )
 }

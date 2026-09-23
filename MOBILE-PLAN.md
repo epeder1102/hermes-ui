@@ -7,17 +7,19 @@
 
 ---
 
-## START HERE — session handoff (last updated 2026-09-19)
+## START HERE — session handoff (last updated 2026-09-23)
 
-**Status: P0–P3 done and validated on real hardware. P4 is next and is the main body of work.**
+**Status: P0–P3 are done and validated on real hardware. P4 is active: the standalone shell, tool
+cards, code/diff rendering, profile selection, and blocking approval sheet are implemented. The
+production composer and long-session/navigation pass are next.**
 
 ### What exists right now
 
 - **It works.** The app runs on Eric's Galaxy S26 over Tailscale: loads, signs in, streams replies.
 - **Live URL:** `http://100.104.221.85:9119` — any browser on the tailnet, installable as a PWA.
   Login `hermes` / `hermes` (Eric's deliberate choice to defer rotation; see "Outstanding" below).
-- **Repo:** `/home/eric/projects/hermes-ui` on CT 117 (devbox). Branch
-  `feat/mobile-p1-credential-seam`, 10 commits, all pushed. `origin` = Eric's fork
+- **Repo:** `/home/eric/projects/hermes-ui` on CT 117 (devbox). Active branch
+  `feat/mobile-p4-chat-surface`. `origin` = Eric's fork
   `github.com/epeder1102/hermes-ui`; `upstream` = `przbadu/hermes-ui` (keep it, `UPSTREAM.md`
   documents a re-sync workflow).
 - **Android APK** builds on GitHub Actions (`.github/workflows/android.yml`), artifact
@@ -57,6 +59,16 @@ Priority order is in the P4 section below. Short version, most valuable first:
 2. Code/diff rendering (per-hunk collapse, no-wrap default, virtualize the list)
 3. Approval prompts (undismissable sheet, full command text, never middle-elided)
 4. Composer (keyboard-aware, safe-area, draft persistence)
+
+Implemented P4 slices as of 2026-09-23:
+- **P4.1:** collapsed tool-call cards with a fixed bottom-sheet detail view.
+- **P4.2/P4.3:** dedicated code and diff rendering, including no-wrap horizontal scrolling and
+  per-hunk collapse.
+- **P4.4:** new-session profile selector backed by the dashboard profile list.
+- **P4.5:** non-dismissable mobile approval sheet with the complete horizontally scrollable command,
+  one-turn/session/permanent allow choices, explicit deny, permanent-choice confirmation, and inline
+  RPC failure recovery. The sheet is scoped to the active session so a background request cannot
+  hijack the foreground chat.
 
 Eric's stated priority is vibe-coding from the phone with the **dev** profile: reading tool output and
 diffs, and approving actions. Weight everything toward that; other panels can stay rough.
