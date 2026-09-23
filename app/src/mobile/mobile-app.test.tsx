@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { I18nProvider } from '@/i18n'
 import { queryClient } from '@/lib/query-client'
 import { $activeGatewayProfile, $newChatProfile, $profiles } from '@/store/profile'
-import { setGatewayState, setMessages } from '@/store/session'
+import { setGatewayState, setMessages, setSelectedStoredSessionId, setSessions } from '@/store/session'
 import { ThemeProvider } from '@/themes/context'
 
 import { MobileApp } from './mobile-app'
@@ -45,6 +45,8 @@ function renderMobileShell() {
 afterEach(() => {
   cleanup()
   setMessages([])
+  setSessions([])
+  setSelectedStoredSessionId(null)
   setGatewayState('idle')
 })
 
@@ -52,7 +54,7 @@ describe('mobile shell (P4 kill criterion)', () => {
   it('mounts the chat engine standalone, with no desktop shell in the tree', () => {
     expect(() => renderMobileShell()).not.toThrow()
 
-    // The composer is present even before the gateway opens (disabled state).
+    // The composer is present before the gateway opens so a draft can be written while reconnecting.
     expect(screen.getByPlaceholderText(/connecting/i)).toBeTruthy()
   })
 
@@ -82,6 +84,36 @@ describe('mobile shell (P4 kill criterion)', () => {
     const input = screen.getByPlaceholderText(/message hermes/i) as HTMLTextAreaElement
 
     expect(input.disabled).toBe(false)
+  })
+
+  it('opens mobile conversation navigation from the active title', () => {
+    act(() => {
+      setSessions([
+        {
+          id: 'saved-session',
+          title: 'Navigation work',
+          preview: 'Continue the mobile drawer',
+          message_count: 4,
+          started_at: 1_700_000_000,
+          last_active: 1_700_000_200,
+          ended_at: null,
+          input_tokens: 0,
+          is_active: false,
+          model: 'test-model',
+          output_tokens: 0,
+          source: 'web',
+          tool_call_count: 0,
+        }
+      ])
+      setSelectedStoredSessionId('saved-session')
+    })
+    renderMobileShell()
+
+    expect(screen.getByText('Navigation work')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /open conversations/i }))
+
+    expect(screen.getByRole('dialog', { name: /conversations/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /open navigation work/i })).toBeTruthy()
   })
 })
 

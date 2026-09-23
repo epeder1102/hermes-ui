@@ -38,9 +38,8 @@ import { useSkinCommand } from '@/themes/use-skin-command'
  *   - `useCwdActions` + `useHermesConfig` (project-branch + voice config; the
  *     mobile shell hardcodes `sttEnabled: false` until P6 wires voice)
  *   - `useRouteResume`, `useKeybinds`, pet/starmap/overlay wiring
- *   - `hydrateFromStoredSession` — a no-op here; it re-pulls a *stored*
- *     transcript after a turn ends. Resuming stored sessions is P4.5; live
- *     streaming does not go through it.
+ *   - `hydrateFromStoredSession` — a no-op here; session selection resumes via
+ *     `useSessionActions`, while post-turn rehydration remains desktop-only.
  */
 export function useChatEngine() {
   const navigate = useNavigate()
@@ -184,6 +183,7 @@ export function useChatEngine() {
   return {
     cancelRun,
     composer,
+    refreshSessions,
     removeSession,
     requestGateway,
     resumeSession,

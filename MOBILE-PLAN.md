@@ -10,8 +10,9 @@
 ## START HERE — session handoff (last updated 2026-09-23)
 
 **Status: P0–P3 are done and validated on real hardware. P4 is active: the standalone shell, tool
-cards, code/diff rendering, profile selection, blocking approval sheet, and production composer are
-implemented. The long-session/navigation pass is next.**
+cards, code/diff rendering, profile selection, blocking approval sheet, production composer, and
+mobile conversation navigation are implemented. Long-session performance and jump-to-latest are
+next.**
 
 ### What exists right now
 
@@ -59,6 +60,7 @@ Priority order is in the P4 section below. Short version, most valuable first:
 2. Code/diff rendering (per-hunk collapse, no-wrap default, virtualize the list)
 3. Approval prompts (undismissable sheet, full command text, never middle-elided)
 4. Composer (keyboard-aware, safe-area, draft persistence)
+5. Conversation navigation (searchable recent sessions, active/working/attention state)
 
 Implemented P4 slices as of 2026-09-23:
 - **P4.1:** collapsed tool-call cards with a fixed bottom-sheet detail view.
@@ -72,6 +74,9 @@ Implemented P4 slices as of 2026-09-23:
 - **P4.6:** production mobile composer with capped multiline growth, newline-first Enter behavior,
   explicit Ctrl/⌘+Enter submit, session-keyed draft persistence, submit-failure recovery, 48px actions,
   safe-area padding, and `visualViewport` keyboard resizing for Android WebView.
+- **P4.7:** polished mobile conversation drawer with search, active/working/attention states,
+  loading/empty/error handling, new-chat and refresh actions, safe-area layout, and one-tap stored
+  session resume. The compact header now shows the active conversation and connection state.
 
 Eric's stated priority is vibe-coding from the phone with the **dev** profile: reading tool output and
 diffs, and approving actions. Weight everything toward that; other panels can stay rough.

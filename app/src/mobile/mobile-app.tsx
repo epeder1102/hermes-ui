@@ -4,7 +4,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ToolPart } from '@/components/assistant-ui/tool/fallback-model'
 import type { ChatMessage, ChatMessagePart } from '@/lib/chat-messages'
 import { $activeGatewayProfile, $newChatProfile, normalizeProfileKey } from '@/store/profile'
-import { $awaitingResponse, $busy, $gatewayState, $messages } from '@/store/session'
+import {
+  $awaitingResponse,
+  $busy,
+  $gatewayState,
+  $messages,
+  $selectedStoredSessionId,
+  $sessions
+} from '@/store/session'
 
 import { MobileApprovalSheet } from './approval-sheet'
 import { CodeBlock } from './code-block'
@@ -12,6 +19,7 @@ import { DiffView } from './diff-view'
 import { looksLikeDiff, splitMarkdownSegments } from './markdown-segments'
 import { MobileComposer, useMobileViewportHeight } from './mobile-composer'
 import { ProfileSheet } from './profile-sheet'
+import { MobileSessionDrawer } from './session-drawer'
 import { switchShellMode } from './shell-mode'
 import { ToolCard } from './tool-card'
 import { useChatEngine } from './use-chat-engine'
@@ -79,19 +87,22 @@ function blocksOf(message: ChatMessage): Array<{ key: string; kind: 'text'; text
  * and the real composer land on top of this engine once the answer is yes.
  */
 export function MobileApp() {
-  const { cancelRun, startFreshSessionDraft, submitText } = useChatEngine()
+  const { cancelRun, refreshSessions, resumeSession, startFreshSessionDraft, submitText } = useChatEngine()
   useMobileViewportHeight()
 
   const messages = useStore($messages)
   const busy = useStore($busy)
   const awaiting = useStore($awaitingResponse)
   const gatewayState = useStore($gatewayState)
+  const sessions = useStore($sessions)
+  const selectedStoredSessionId = useStore($selectedStoredSessionId)
 
   const activeGatewayProfile = useStore($activeGatewayProfile)
   const newChatProfile = useStore($newChatProfile)
   const profile = normalizeProfileKey(newChatProfile ?? activeGatewayProfile)
 
   const [profileOpen, setProfileOpen] = useState(false)
+  const [sessionsOpen, setSessionsOpen] = useState(false)
   const endRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -100,6 +111,12 @@ export function MobileApp() {
   }, [messages])
 
   const ready = gatewayState === 'open'
+  const selectedSession = sessions.find(session => session.id === selectedStoredSessionId)
+
+  const conversationTitle =
+    selectedSession?.title?.trim() || selectedSession?.preview?.trim().split('\n')[0] || 'New conversation'
+
+  const connectionLabel = ready ? (busy ? 'Working' : awaiting ? 'Waiting for input' : 'Ready') : gatewayState
 
   return (
     <div
@@ -122,59 +139,90 @@ export function MobileApp() {
 
       <header
         style={{
-          padding: 'calc(10px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) 10px calc(14px + env(safe-area-inset-left))',
+          padding:
+            'calc(8px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) 8px calc(10px + env(safe-area-inset-left))',
           borderBottom: '1px solid var(--dt-border, #26262b)',
           display: 'flex',
           flexShrink: 0,
-          gap: 10,
+          gap: 8,
           alignItems: 'center',
-          fontSize: 13
+          minHeight: 62
         }}
       >
-        <strong style={{ fontSize: 14 }}>Hermes mobile</strong>
-        {/* The profile is the single most important piece of context on this
-            screen — which agent a message will reach — so it is a first-class
-            header control, not buried in a settings page. */}
+        <button
+          aria-label="Open conversations"
+          onClick={() => setSessionsOpen(true)}
+          style={{
+            alignItems: 'center',
+            background: 'transparent',
+            border: 0,
+            color: 'var(--foreground, #e7e7ea)',
+            display: 'flex',
+            flex: 1,
+            gap: 9,
+            minHeight: 44,
+            minWidth: 0,
+            padding: '0 2px',
+            textAlign: 'left'
+          }}
+          type="button"
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              alignItems: 'center',
+              background: 'color-mix(in srgb, var(--foreground) 7%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--foreground) 10%, transparent)',
+              borderRadius: 12,
+              display: 'flex',
+              flex: '0 0 42px',
+              height: 42,
+              justifyContent: 'center'
+            }}
+          >
+            <MenuIcon />
+          </span>
+          <span style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: 2, minWidth: 0 }}>
+            <strong
+              style={{ fontSize: 13, fontWeight: 760, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
+              {conversationTitle}
+            </strong>
+            <span style={{ color: 'color-mix(in srgb, var(--foreground) 48%, transparent)', fontSize: 10 }}>
+              {connectionLabel}
+            </span>
+          </span>
+        </button>
+
         <button
           aria-label={`Profile: ${profile}. Change profile.`}
           onClick={() => setProfileOpen(true)}
           style={{
             ...btn,
-            padding: '6px 10px',
-            minHeight: 44,
-            display: 'flex',
             alignItems: 'center',
-            gap: 6,
-            maxWidth: '45%'
+            display: 'flex',
+            gap: 5,
+            maxWidth: '29%',
+            minHeight: 44,
+            padding: '6px 9px'
           }}
           type="button"
         >
-          <span
-            style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}
-          >
+          <span style={{ fontSize: 11, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {profile}
           </span>
-          <span aria-hidden style={{ opacity: 0.5 }}>
+          <span aria-hidden="true" style={{ opacity: 0.45 }}>
             ▾
           </span>
         </button>
 
-        <span style={{ opacity: 0.6, fontSize: 12 }}>
-          {gatewayState === 'open' ? (busy ? 'busy' : awaiting ? 'awaiting' : 'ready') : gatewayState}
-        </span>
-        <button onClick={() => startFreshSessionDraft()} style={{ marginLeft: 'auto', ...btn }} type="button">
-          New
-        </button>
-
-        {/* The only way back to the desktop shell from inside the APK, which has
-            no address bar to append ?m=0 to. */}
         <button
-          onClick={() => switchShellMode('desktop')}
-          style={{ ...btn, padding: '10px 10px', opacity: 0.75 }}
-          title="Switch to the desktop layout"
+          aria-label="New conversation"
+          onClick={() => startFreshSessionDraft()}
+          style={{ ...btn, alignItems: 'center', display: 'flex', justifyContent: 'center', padding: 0, width: 44 }}
           type="button"
         >
-          Desktop
+          <PlusIcon />
         </button>
       </header>
 
@@ -223,9 +271,33 @@ export function MobileApp() {
 
       <MobileComposer busy={busy} onCancel={cancelRun} onSubmit={submitText} ready={ready} />
 
+      <MobileSessionDrawer
+        onClose={() => setSessionsOpen(false)}
+        onNewSession={startFreshSessionDraft}
+        onRefresh={refreshSessions}
+        onResumeSession={resumeSession}
+        onSwitchDesktop={() => switchShellMode('desktop')}
+        open={sessionsOpen}
+      />
       {profileOpen && <ProfileSheet onClose={() => setProfileOpen(false)} />}
       <MobileApprovalSheet />
     </div>
+  )
+}
+
+function MenuIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" height="20" viewBox="0 0 24 24" width="20">
+      <path d="M5 7h14M5 12h14M5 17h9" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+    </svg>
+  )
+}
+
+function PlusIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" height="20" viewBox="0 0 24 24" width="20">
+      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+    </svg>
   )
 }
 
