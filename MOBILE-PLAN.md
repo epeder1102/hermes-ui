@@ -10,9 +10,9 @@
 ## START HERE — session handoff (last updated 2026-09-23)
 
 **Status: P0–P3 are done and validated on real hardware. P4 is active: the standalone shell, tool
-cards, code/diff rendering, profile selection, blocking approval sheet, production composer, and
-mobile conversation navigation are implemented. Long-session performance and jump-to-latest are
-next.**
+cards, code/diff rendering, profile selection, blocking approval sheet, production composer,
+mobile conversation navigation, and virtualized long-session transcript are implemented. Remaining
+P4 work is output-budget/full-screen polish plus real-device stress acceptance.**
 
 ### What exists right now
 
@@ -77,6 +77,9 @@ Implemented P4 slices as of 2026-09-23:
 - **P4.7:** polished mobile conversation drawer with search, active/working/attention states,
   loading/empty/error handling, new-chat and refresh actions, safe-area layout, and one-tap stored
   session resume. The compact header now shows the active conversation and connection state.
+- **P4.8:** variable-height virtualized mobile transcript with a bounded DOM at 500 messages,
+  bottom-lock release while reading history, streaming-safe scroll preservation, and an explicit
+  44px jump-to-latest action.
 
 Eric's stated priority is vibe-coding from the phone with the **dev** profile: reading tool output and
 diffs, and approving actions. Weight everything toward that; other panels can stay rough.

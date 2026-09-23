@@ -86,6 +86,69 @@ describe('mobile shell (P4 kill criterion)', () => {
     expect(input.disabled).toBe(false)
   })
 
+  it('keeps a 500-message transcript bounded with a virtualized message window', () => {
+    act(() => {
+      setMessages(
+        Array.from({ length: 500 }, (_, index) => ({
+          id: `message-${index}`,
+          role: index % 2 === 0 ? ('user' as const) : ('assistant' as const),
+          parts: [{ type: 'text' as const, text: `virtual message ${index}` }]
+        }))
+      )
+    })
+
+    const { container } = renderMobileShell()
+    const renderedRows = container.querySelectorAll('[data-message-index]')
+
+    expect(renderedRows.length).toBeGreaterThan(0)
+    expect(renderedRows.length).toBeLessThan(40)
+    expect(screen.queryByText('virtual message 250')).toBeNull()
+  })
+
+  it('stops following while history is being read and offers an explicit jump to latest', () => {
+    act(() => {
+      setMessages(
+        Array.from({ length: 20 }, (_, index) => ({
+          id: `message-${index}`,
+          role: index % 2 === 0 ? ('user' as const) : ('assistant' as const),
+          parts: [{ type: 'text' as const, text: `scroll message ${index}` }]
+        }))
+      )
+    })
+
+    renderMobileShell()
+    const transcript = screen.getByRole('log', { name: /conversation messages/i })
+
+    Object.defineProperties(transcript, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 4_000 },
+      scrollTop: { configurable: true, value: 400, writable: true }
+    })
+    fireEvent.scroll(transcript)
+
+    const jump = screen.getByRole('button', { name: /jump to latest message/i })
+
+    expect(jump).toBeTruthy()
+
+    act(() => {
+      setMessages(
+        Array.from({ length: 21 }, (_, index) => ({
+          id: `message-${index}`,
+          role: index % 2 === 0 ? ('user' as const) : ('assistant' as const),
+          parts: [{ type: 'text' as const, text: `scroll message ${index}` }]
+        }))
+      )
+    })
+
+    // Streaming must not drag a reader away from history after the bottom lock
+    // has been released.
+    expect(transcript.scrollTop).toBe(400)
+    expect(screen.getByRole('button', { name: /jump to latest message/i })).toBeTruthy()
+
+    fireEvent.click(jump)
+    expect(screen.queryByRole('button', { name: /jump to latest message/i })).toBeNull()
+  })
+
   it('opens mobile conversation navigation from the active title', () => {
     act(() => {
       setSessions([

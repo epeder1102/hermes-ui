@@ -1,5 +1,6 @@
 import { useStore } from '@nanostores/react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { ToolPart } from '@/components/assistant-ui/tool/fallback-model'
 import type { ChatMessage, ChatMessagePart } from '@/lib/chat-messages'
@@ -103,12 +104,6 @@ export function MobileApp() {
 
   const [profileOpen, setProfileOpen] = useState(false)
   const [sessionsOpen, setSessionsOpen] = useState(false)
-  const endRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    // scrollIntoView is missing in jsdom and in some older Android WebViews.
-    endRef.current?.scrollIntoView?.({ behavior: 'smooth' })
-  }, [messages])
 
   const ready = gatewayState === 'open'
   const selectedSession = sessions.find(session => session.id === selectedStoredSessionId)
@@ -226,48 +221,7 @@ export function MobileApp() {
         </button>
       </header>
 
-      <main
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: 'auto',
-          padding: '14px calc(14px + env(safe-area-inset-right)) 14px calc(14px + env(safe-area-inset-left))',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12
-        }}
-      >
-        {messages.length === 0 && <p style={{ opacity: 0.5 }}>No messages yet — send one below.</p>}
-
-        {messages.map(message => {
-          const blocks = blocksOf(message)
-          const isUser = message.role === 'user'
-
-          return (
-            <div key={message.id} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {blocks.map(block =>
-                block.kind === 'tool' ? (
-                  <ToolCard key={block.key} part={block.part} running={busy} />
-                ) : (
-                  <MessageText isUser={isUser} key={block.key} text={block.text} />
-                )
-              )}
-
-              {blocks.length === 0 && !message.error && (
-                <em style={{ alignSelf: isUser ? 'flex-end' : 'flex-start', opacity: 0.4, fontSize: 12 }}>
-                  {message.pending ? '…' : '(no content)'}
-                </em>
-              )}
-
-              {message.error && (
-                <div style={{ color: 'var(--dt-destructive, #ff8383)', fontSize: 13, alignSelf: 'flex-start' }}>{message.error}</div>
-              )}
-            </div>
-          )
-        })}
-
-        <div ref={endRef} />
-      </main>
+      <MobileMessageList busy={busy} messages={messages} sessionKey={selectedStoredSessionId ?? 'new-conversation'} />
 
       <MobileComposer busy={busy} onCancel={cancelRun} onSubmit={submitText} ready={ready} />
 
@@ -281,6 +235,222 @@ export function MobileApp() {
       />
       {profileOpen && <ProfileSheet onClose={() => setProfileOpen(false)} />}
       <MobileApprovalSheet />
+    </div>
+  )
+}
+
+const MESSAGE_ESTIMATE_PX = 160
+const MESSAGE_OVERSCAN = 6
+const BOTTOM_THRESHOLD_PX = 72
+
+/**
+ * A variable-height virtual transcript with one scroll owner.
+ *
+ * While the reader is at the bottom, new tokens and row remeasurement keep the
+ * latest turn pinned. Scrolling up releases that lock, so a streaming response
+ * cannot yank the reader away from history; the explicit button restores it.
+ */
+function MobileMessageList({
+  busy,
+  messages,
+  sessionKey
+}: {
+  busy: boolean
+  messages: ChatMessage[]
+  sessionKey: string
+}) {
+  const scrollerRef = useRef<HTMLElement | null>(null)
+  const followLatestRef = useRef(true)
+  const [isAtBottom, setIsAtBottom] = useState(true)
+
+  const virtualizer = useVirtualizer({
+    count: messages.length,
+    estimateSize: () => MESSAGE_ESTIMATE_PX,
+    getItemKey: index => messages[index]?.id ?? index,
+    getScrollElement: () => scrollerRef.current,
+    initialOffset: Math.max(0, messages.length * MESSAGE_ESTIMATE_PX - 700),
+    initialRect: { height: 700, width: 390 },
+    overscan: MESSAGE_OVERSCAN
+  })
+
+  const scrollToLatest = useCallback(() => {
+    followLatestRef.current = true
+    setIsAtBottom(true)
+
+    if (messages.length > 0) {
+      virtualizer.scrollToIndex(messages.length - 1, { align: 'end' })
+    }
+  }, [messages.length, virtualizer])
+
+  const updateBottomLock = useCallback(() => {
+    const scroller = scrollerRef.current
+
+    if (!scroller) {
+      return
+    }
+
+    const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= BOTTOM_THRESHOLD_PX
+
+    followLatestRef.current = atBottom
+    setIsAtBottom(previous => (previous === atBottom ? previous : atBottom))
+  }, [])
+
+  // A session swap and initial history load should open at the newest turn.
+  useEffect(() => {
+    followLatestRef.current = true
+    setIsAtBottom(true)
+  }, [sessionKey])
+
+  // Streaming text and asynchronously measured rich blocks can grow over
+  // several frames. Pin until height settles, but only while the reader has
+  // not deliberately escaped the bottom lock.
+  useLayoutEffect(() => {
+    if (!followLatestRef.current || messages.length === 0) {
+      return
+    }
+
+    let frame = 0
+    let lastHeight = -1
+    let stableFrames = 0
+    let rafId = 0
+
+    const settle = () => {
+      if (!followLatestRef.current) {
+        return
+      }
+
+      scrollToLatest()
+
+      const height = scrollerRef.current?.scrollHeight ?? 0
+
+      stableFrames = height === lastHeight ? stableFrames + 1 : 0
+      lastHeight = height
+
+      if (stableFrames < 2 && frame++ < 12) {
+        rafId = requestAnimationFrame(settle)
+      }
+    }
+
+    rafId = requestAnimationFrame(settle)
+
+    return () => cancelAnimationFrame(rafId)
+  }, [messages, scrollToLatest, sessionKey])
+
+  const measuredItems = virtualizer.getVirtualItems().map(item => ({ index: item.index, start: item.start }))
+  // Before ResizeObserver reports the WebView viewport (and in jsdom, where it
+  // never does), paint a small newest-first fallback instead of a blank frame.
+  // The measured virtual window replaces this immediately on a real device.
+  const fallbackStart = Math.max(0, messages.length - (MESSAGE_OVERSCAN * 2 + 1))
+
+  const virtualItems =
+    measuredItems.length > 0
+      ? measuredItems
+      : messages.slice(fallbackStart).map((_, offset) => {
+          const index = fallbackStart + offset
+
+          return { index, start: index * MESSAGE_ESTIMATE_PX }
+        })
+
+  return (
+    <section style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+      <main
+        aria-label="Conversation messages"
+        onScroll={updateBottomLock}
+        ref={scrollerRef}
+        role="log"
+        style={{
+          height: '100%',
+          minHeight: 0,
+          overflowX: 'hidden',
+          overflowY: 'auto',
+          overscrollBehavior: 'contain',
+          padding: '14px calc(14px + env(safe-area-inset-right)) 14px calc(14px + env(safe-area-inset-left))'
+        }}
+      >
+        {messages.length === 0 ? (
+          <p style={{ opacity: 0.5 }}>No messages yet — send one below.</p>
+        ) : (
+          <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
+            {virtualItems.map(virtualItem => {
+              const message = messages[virtualItem.index]
+
+              return message ? (
+                <div
+                  data-index={virtualItem.index}
+                  data-message-index={virtualItem.index}
+                  key={message.id}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    left: 0,
+                    paddingBottom: 12,
+                    position: 'absolute',
+                    top: 0,
+                    transform: `translateY(${virtualItem.start}px)`,
+                    width: '100%'
+                  }}
+                >
+                  <MobileMessage busy={busy} message={message} />
+                </div>
+              ) : null
+            })}
+          </div>
+        )}
+      </main>
+
+      {!isAtBottom && messages.length > 0 && (
+        <button
+          aria-label="Jump to latest message"
+          onClick={scrollToLatest}
+          style={{
+            ...btn,
+            alignItems: 'center',
+            background: 'var(--dt-card, #17171a)',
+            borderRadius: 999,
+            bottom: 12,
+            boxShadow: '0 8px 24px color-mix(in srgb, #000 35%, transparent)',
+            display: 'flex',
+            fontSize: 12,
+            gap: 6,
+            left: '50%',
+            minHeight: 44,
+            padding: '8px 14px',
+            position: 'absolute',
+            transform: 'translateX(-50%)',
+            zIndex: 2
+          }}
+          type="button"
+        >
+          <span aria-hidden="true">↓</span>
+          Latest
+        </button>
+      )}
+    </section>
+  )
+}
+
+function MobileMessage({ busy, message }: { busy: boolean; message: ChatMessage }) {
+  const blocks = blocksOf(message)
+  const isUser = message.role === 'user'
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {blocks.map(block =>
+        block.kind === 'tool' ? (
+          <ToolCard key={block.key} part={block.part} running={busy} />
+        ) : (
+          <MessageText isUser={isUser} key={block.key} text={block.text} />
+        )
+      )}
+
+      {blocks.length === 0 && !message.error && (
+        <em style={{ alignSelf: isUser ? 'flex-end' : 'flex-start', opacity: 0.4, fontSize: 12 }}>
+          {message.pending ? '…' : '(no content)'}
+        </em>
+      )}
+
+      {message.error && (
+        <div style={{ color: 'var(--dt-destructive, #ff8383)', fontSize: 13, alignSelf: 'flex-start' }}>{message.error}</div>
+      )}
     </div>
   )
 }
