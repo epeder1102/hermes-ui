@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, useEffect, useMemo, useState } from 'react'
 
 import { triggerHaptic } from '@/lib/haptics'
 import {
@@ -71,7 +71,6 @@ export function MobileSessionDrawer({
   const selectedId = useStore($selectedStoredSessionId)
   const workingIds = useStore($workingSessionIds)
   const attentionIds = useStore($attentionSessionIds)
-  const searchRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const [refreshError, setRefreshError] = useState(false)
   const [selectingId, setSelectingId] = useState<string | null>(null)
@@ -87,7 +86,6 @@ export function MobileSessionDrawer({
     }
 
     setRefreshError(false)
-    const frame = window.requestAnimationFrame(() => searchRef.current?.focus())
     let active = true
 
     Promise.resolve(onRefresh()).catch(() => {
@@ -106,7 +104,6 @@ export function MobileSessionDrawer({
 
     return () => {
       active = false
-      window.cancelAnimationFrame(frame)
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [onClose, onRefresh, open])
@@ -189,7 +186,6 @@ export function MobileSessionDrawer({
             aria-label="Search conversations"
             onChange={event => setQuery(event.currentTarget.value)}
             placeholder="Search conversations"
-            ref={searchRef}
             style={styles.searchInput}
             type="search"
             value={query}
@@ -353,9 +349,9 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: 'center'
   },
   avatarSelected: {
-    background: 'color-mix(in srgb, var(--primary) 22%, transparent)',
-    borderColor: 'color-mix(in srgb, var(--primary) 38%, transparent)',
-    color: 'var(--primary)'
+    background: 'color-mix(in srgb, var(--dt-primary, #0053fd) 22%, transparent)',
+    borderColor: 'color-mix(in srgb, var(--dt-primary, #0053fd) 38%, transparent)',
+    color: 'var(--dt-primary, #0053fd)'
   },
   backdrop: {
     background: 'rgba(0, 0, 0, 0.58)',
@@ -364,8 +360,9 @@ const styles: Record<string, CSSProperties> = {
     zIndex: 80
   },
   drawer: {
-    background:
-      'linear-gradient(180deg, color-mix(in srgb, var(--background) 97%, var(--primary) 3%), var(--background))',
+    backgroundColor: 'var(--ui-chat-surface-background, #f8faff)',
+    backgroundImage:
+      'linear-gradient(180deg, color-mix(in srgb, var(--ui-chat-surface-background, #f8faff) 97%, var(--dt-primary, #0053fd) 3%), var(--ui-chat-surface-background, #f8faff))',
     borderRight: '1px solid color-mix(in srgb, var(--foreground) 11%, transparent)',
     boxShadow: '24px 0 60px rgba(0, 0, 0, 0.34)',
     color: 'var(--foreground)',
@@ -389,9 +386,9 @@ const styles: Record<string, CSSProperties> = {
   },
   emptyIcon: {
     alignItems: 'center',
-    background: 'color-mix(in srgb, var(--primary) 14%, transparent)',
+    background: 'color-mix(in srgb, var(--dt-primary, #0053fd) 14%, transparent)',
     borderRadius: 16,
-    color: 'var(--primary)',
+    color: 'var(--dt-primary, #0053fd)',
     display: 'flex',
     fontSize: 24,
     height: 48,
@@ -409,7 +406,7 @@ const styles: Record<string, CSSProperties> = {
     padding: '9px 11px'
   },
   eyebrow: {
-    color: 'var(--primary)',
+    color: 'var(--dt-primary, #0053fd)',
     fontSize: 10,
     fontWeight: 850,
     letterSpacing: '0.16em',
@@ -462,11 +459,11 @@ const styles: Record<string, CSSProperties> = {
   },
   newButton: {
     alignItems: 'center',
-    background: 'var(--primary)',
+    background: 'var(--dt-primary, #0053fd)',
     border: 0,
     borderRadius: 13,
-    boxShadow: '0 9px 24px color-mix(in srgb, var(--primary) 22%, transparent)',
-    color: 'var(--primary-foreground)',
+    boxShadow: '0 9px 24px color-mix(in srgb, var(--dt-primary, #0053fd) 22%, transparent)',
+    color: 'var(--dt-primary-foreground, #fcfcfc)',
     display: 'flex',
     fontSize: 13,
     fontWeight: 760,
@@ -488,7 +485,7 @@ const styles: Record<string, CSSProperties> = {
   refreshButton: {
     background: 'transparent',
     border: 0,
-    color: 'var(--primary)',
+    color: 'var(--dt-primary, #0053fd)',
     fontSize: 12,
     fontWeight: 750,
     minHeight: 36,
@@ -522,8 +519,8 @@ const styles: Record<string, CSSProperties> = {
     minWidth: 0
   },
   rowSelected: {
-    background: 'color-mix(in srgb, var(--primary) 10%, transparent)',
-    borderColor: 'color-mix(in srgb, var(--primary) 22%, transparent)'
+    background: 'color-mix(in srgb, var(--dt-primary, #0053fd) 10%, transparent)',
+    borderColor: 'color-mix(in srgb, var(--dt-primary, #0053fd) 22%, transparent)'
   },
   rowSubtitle: {
     color: 'color-mix(in srgb, var(--foreground) 48%, transparent)',
@@ -570,16 +567,16 @@ const styles: Record<string, CSSProperties> = {
     padding: '0 12px'
   },
   spinner: {
-    border: '2px solid color-mix(in srgb, var(--primary) 20%, transparent)',
+    border: '2px solid color-mix(in srgb, var(--dt-primary, #0053fd) 20%, transparent)',
     borderRadius: '50%',
-    borderTopColor: 'var(--primary)',
+    borderTopColor: 'var(--dt-primary, #0053fd)',
     height: 28,
     width: 28
   },
   spinnerSmall: {
-    border: '2px solid color-mix(in srgb, var(--primary) 20%, transparent)',
+    border: '2px solid color-mix(in srgb, var(--dt-primary, #0053fd) 20%, transparent)',
     borderRadius: '50%',
-    borderTopColor: 'var(--primary)',
+    borderTopColor: 'var(--dt-primary, #0053fd)',
     flex: '0 0 18px',
     height: 18,
     width: 18
@@ -624,7 +621,7 @@ const styles: Record<string, CSSProperties> = {
   },
   workingBadge: {
     alignItems: 'center',
-    color: 'var(--primary)',
+    color: 'var(--dt-primary, #0053fd)',
     display: 'flex',
     flexShrink: 0,
     fontSize: 10,
@@ -632,9 +629,9 @@ const styles: Record<string, CSSProperties> = {
     gap: 4
   },
   workingDot: {
-    background: 'var(--primary)',
+    background: 'var(--dt-primary, #0053fd)',
     borderRadius: '50%',
-    boxShadow: '0 0 8px color-mix(in srgb, var(--primary) 70%, transparent)',
+    boxShadow: '0 0 8px color-mix(in srgb, var(--dt-primary, #0053fd) 70%, transparent)',
     height: 6,
     width: 6
   }

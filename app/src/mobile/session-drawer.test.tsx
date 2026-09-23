@@ -70,12 +70,19 @@ describe('MobileSessionDrawer', () => {
 
     renderDrawer()
 
-    expect(screen.getByRole('dialog', { name: /conversations/i })).toBeTruthy()
+    const dialog = screen.getByRole('dialog', { name: /conversations/i })
+    const search = screen.getByRole('searchbox', { name: /search conversations/i })
+
+    expect(dialog.style.backgroundColor).toBe('var(--ui-chat-surface-background, #f8faff)')
     expect(screen.getByRole('button', { name: /active conversation/i }).getAttribute('aria-current')).toBe('page')
     expect(screen.getByText('Working')).toBeTruthy()
     expect(screen.getByText('Needs input')).toBeTruthy()
     expect(screen.getByText('dev')).toBeTruthy()
-    await waitFor(() => expect(screen.getByRole('searchbox', { name: /search conversations/i })).toBe(document.activeElement))
+
+    await act(async () => {
+      await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()))
+    })
+    expect(search).not.toBe(document.activeElement)
   })
 
   it('filters the loaded conversations without changing the store', () => {
