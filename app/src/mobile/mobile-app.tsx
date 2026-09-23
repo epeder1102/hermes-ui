@@ -221,7 +221,7 @@ export function MobileApp() {
         </button>
       </header>
 
-      <MobileMessageList busy={busy} messages={messages} sessionKey={selectedStoredSessionId ?? 'new-conversation'} />
+      <MobileMessageList messages={messages} sessionKey={selectedStoredSessionId ?? 'new-conversation'} />
 
       <MobileComposer busy={busy} onCancel={cancelRun} onSubmit={submitText} ready={ready} />
 
@@ -250,15 +250,8 @@ const BOTTOM_THRESHOLD_PX = 72
  * latest turn pinned. Scrolling up releases that lock, so a streaming response
  * cannot yank the reader away from history; the explicit button restores it.
  */
-function MobileMessageList({
-  busy,
-  messages,
-  sessionKey
-}: {
-  busy: boolean
-  messages: ChatMessage[]
-  sessionKey: string
-}) {
+function MobileMessageList({ messages: allMessages, sessionKey }: { messages: ChatMessage[]; sessionKey: string }) {
+  const messages = useMemo(() => allMessages.filter(message => !message.hidden), [allMessages])
   const scrollerRef = useRef<HTMLElement | null>(null)
   const followLatestRef = useRef(true)
   const [isAtBottom, setIsAtBottom] = useState(true)
@@ -389,7 +382,7 @@ function MobileMessageList({
                     width: '100%'
                   }}
                 >
-                  <MobileMessage busy={busy} message={message} />
+                  <MobileMessage message={message} />
                 </div>
               ) : null
             })}
@@ -428,7 +421,7 @@ function MobileMessageList({
   )
 }
 
-function MobileMessage({ busy, message }: { busy: boolean; message: ChatMessage }) {
+function MobileMessage({ message }: { message: ChatMessage }) {
   const blocks = blocksOf(message)
   const isUser = message.role === 'user'
 
@@ -436,7 +429,7 @@ function MobileMessage({ busy, message }: { busy: boolean; message: ChatMessage 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       {blocks.map(block =>
         block.kind === 'tool' ? (
-          <ToolCard key={block.key} part={block.part} running={busy} />
+          <ToolCard key={block.key} part={block.part} running={Boolean(message.pending)} />
         ) : (
           <MessageText isUser={isUser} key={block.key} text={block.text} />
         )

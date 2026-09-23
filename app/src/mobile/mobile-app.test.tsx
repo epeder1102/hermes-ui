@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { I18nProvider } from '@/i18n'
 import { queryClient } from '@/lib/query-client'
 import { $activeGatewayProfile, $newChatProfile, $profiles } from '@/store/profile'
-import { setGatewayState, setMessages, setSelectedStoredSessionId, setSessions } from '@/store/session'
+import { setBusy, setGatewayState, setMessages, setSelectedStoredSessionId, setSessions } from '@/store/session'
 import { ThemeProvider } from '@/themes/context'
 
 import { MobileApp } from './mobile-app'
@@ -48,6 +48,7 @@ afterEach(() => {
   setSessions([])
   setSelectedStoredSessionId(null)
   setGatewayState('idle')
+  setBusy(false)
 })
 
 describe('mobile shell (P4 kill criterion)', () => {
@@ -103,6 +104,60 @@ describe('mobile shell (P4 kill criterion)', () => {
     expect(renderedRows.length).toBeGreaterThan(0)
     expect(renderedRows.length).toBeLessThan(40)
     expect(screen.queryByText('virtual message 250')).toBeNull()
+  })
+
+  it('excludes hidden records from the visible transcript', () => {
+    act(() => {
+      setMessages([
+        { id: 'hidden', role: 'assistant', hidden: true, parts: [{ type: 'text', text: 'internal hidden record' }] },
+        { id: 'visible', role: 'assistant', parts: [{ type: 'text', text: 'visible response' }] }
+      ])
+    })
+
+    renderMobileShell()
+
+    expect(screen.queryByText('internal hidden record')).toBeNull()
+    expect(screen.getByText('visible response')).toBeTruthy()
+  })
+
+  it('marks only tools in the pending message as running', () => {
+    act(() => {
+      setBusy(true)
+      setMessages([
+        {
+          id: 'historical',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool-call',
+              toolCallId: 'historical-tool',
+              toolName: 'terminal',
+              args: { command: 'pwd' },
+              argsText: '{}'
+            } as never
+          ]
+        },
+        {
+          id: 'active',
+          role: 'assistant',
+          pending: true,
+          parts: [
+            {
+              type: 'tool-call',
+              toolCallId: 'active-tool',
+              toolName: 'web_search',
+              args: { query: 'Hermes' },
+              argsText: '{}'
+            } as never
+          ]
+        }
+      ])
+    })
+
+    renderMobileShell()
+
+    expect(screen.queryByRole('button', { name: /terminal.*running/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /web_search.*running/i })).toBeTruthy()
   })
 
   it('stops following while history is being read and offers an explicit jump to latest', () => {
