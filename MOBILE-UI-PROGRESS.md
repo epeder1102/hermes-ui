@@ -2,52 +2,74 @@
 
 Last updated: 2026-09-23
 
-## Repository state
+## Repository and deployment state
 
 - Host: `devbox`
 - Repository: `/home/eric/projects/hermes-ui`
 - Branch: `feat/mobile-p4-chat-surface`
-- Fix commit: `4a008fe` (`fix(mobile): make conversation drawer opaque`)
-- Current live asset: `index-BiIDdlR0.js`
-- User screenshot: `/root/.hermes/profiles/dev/cache/images/img_7553b5dedfce.jpg`
+- Virtualization commit: `d162502` (`feat(mobile): virtualize long conversations`)
+- Follow-up correctness commit: `b4d79a3` (`fix(mobile): preserve transcript message semantics`)
+- Current live asset: `index-BGv07OLR.js`
+- Live asset SHA-256: `306a45459f355a5c14cef44c47c7ed13047dc156226755187679d52aa1822f65`
+- Rollback backup: `/opt/hermes-ui/dist.backup-20260923-165702`
 
-## User-visible failure
+## Completed slice: P4.8 long-session transcript
 
-Opening the three-lines/conversation button produces a translucent drawer over the chat and immediately opens the Android keyboard. The drawer content then competes visually with the chat behind it and has very little usable vertical space.
+- [x] Replace the unbounded `messages.map` transcript with `@tanstack/react-virtual` variable-height virtualization.
+- [x] Keep the mobile DOM bounded for a 500-message transcript (fewer than 40 rows in the regression fixture).
+- [x] Measure rich/variable-height message rows and retain overscan for smooth phone scrolling.
+- [x] Open initial history and switched sessions at the newest message.
+- [x] Follow streaming growth only while the reader remains near the bottom.
+- [x] Release bottom lock when the reader scrolls into history so streaming cannot yank the viewport.
+- [x] Add a 44px accessible `Jump to latest message` control that restores bottom lock.
+- [x] Avoid smooth-scroll races while row heights are changing.
+- [x] Provide a newest-message fallback window before `ResizeObserver` reports a WebView viewport and in jsdom.
+- [x] Filter `hidden` chat records before virtual indexing/rendering.
+- [x] Mark a tool as running from its owning message's `pending` state rather than global session `busy`, preventing historical unresolved cards from appearing active during a later turn.
+- [x] Update `MOBILE-PLAN.md` to record P4.8.
+- [x] Commit, push, build, deploy atomically, and verify the live bundle.
 
-## Confirmed root causes
+## Validation evidence
 
-1. `app/src/mobile/session-drawer.tsx` builds its drawer background with `var(--primary)` and uses `var(--primary)` / `var(--primary-foreground)` throughout.
-2. Those variables are not defined in `app/src/styles.css`. The established theme tokens are `--dt-primary` and `--dt-primary-foreground`.
-3. Because the undefined variable appears inside the drawer's single `background` shorthand/gradient, Android WebView rejects the property and the drawer has no opaque surface.
-4. The open effect programmatically focuses the search input with `requestAnimationFrame`, which raises the software keyboard immediately. This is especially damaging on the phone because it compresses the drawer before the user asks to search.
+- Focused mobile suite: **16/16 passed** (`src/mobile/mobile-app.test.tsx`).
+- TypeScript: passed (`npx tsc -p . --noEmit`).
+- ESLint: passed for the modified implementation and test files.
+- Production Vite/PWA build: passed; generated `index-BGv07OLR.js`.
+- Full jsdom suite: **1,357 passed / 1,362 total**. The remaining five failures are the same known baseline failures previously reproduced before this slice:
+  - three gateway connecting-overlay tests lacking their expected routing/state conditions;
+  - one pane width-override expectation;
+  - one prompt recovery expectation that omits the newer `source` field.
+- Android CI for `d162502`: passed — <https://github.com/epeder1102/hermes-ui/actions/runs/35916944412>.
+- Android CI for final commit `b4d79a3`: passed — <https://github.com/epeder1102/hermes-ui/actions/runs/35922639758>.
+- Atomic deployment completed with the previous bundle retained at `/opt/hermes-ui/dist.backup-20260923-165702`.
+- Live public endpoint returned HTTP 200.
+- Direct live fetch of `/assets/index-BGv07OLR.js` matched the deployed file byte-for-byte and contained both `Jump to latest message` and `Conversation messages` markers.
+- `/api/status` returned HTTP 200 when called with the dashboard session token.
 
-## Fix in progress
+## Files changed
 
-- [x] Add a regression test that the drawer does not autofocus search on open.
-- [x] Add a regression/source assertion that the drawer has a standalone opaque background color using defined theme tokens.
-- [x] Replace every undefined `--primary` token in the drawer with `--dt-primary` and every `--primary-foreground` with `--dt-primary-foreground`.
-- [x] Split the drawer surface into an opaque `backgroundColor` plus optional `backgroundImage`, so an unsupported/invalid gradient cannot make the sheet transparent.
-- [x] Remove automatic search focus. Search remains available after an explicit tap.
-- [x] Run focused tests, lint, full CI-compatible tests, TypeScript, and production build.
-- [x] Commit and push (`4a008fe`).
-- [x] Deploy atomically and verify the authenticated live bundle (`index-BiIDdlR0.js`).
-- [ ] Ask Eric to force-close/reopen and verify on the Galaxy S26; source/build/live-bundle verification is not physical-device acceptance.
+- `app/src/mobile/mobile-app.tsx`
+  - `MobileMessageList`: virtualizer, bottom-lock tracking, settling, fallback window, jump control, hidden-message filtering.
+  - `MobileMessage`: message-local pending semantics for tool cards.
+- `app/src/mobile/mobile-app.test.tsx`
+  - 500-message DOM-bound regression.
+  - reader-scroll and jump-to-latest regression.
+  - hidden-message regression.
+  - historical-versus-pending tool-state regression.
+- `MOBILE-PLAN.md`
+  - P4.8 completion and remaining P4 scope.
 
-## Evidence gathered
+## Known follow-up optimization
 
-- Screenshot inspection confirms underlying chat/header content is visible through the drawer.
-- Source inspection found the drawer background at `session-drawer.tsx` uses a gradient containing `var(--primary)`.
-- Search of `app/src/styles.css` found no declaration for `--primary` or `--primary-foreground`.
-- `app/src/styles.css` defines `--dt-primary`, `--dt-primary-foreground`, `--background`, `--foreground`, and `--ui-chat-surface-background`.
-- `session-drawer.tsx` explicitly focused `searchRef.current` on open.
-- The new regression test failed before the implementation because the drawer had no standalone `backgroundColor`.
-- After the implementation, 17/17 focused mobile tests passed, ESLint passed, and the TypeScript/production build passed.
-- The complete CI-compatible run passed 1,353 tests and reported 5 unrelated failures. A detached worktree at untouched commit `b76c178` reproduced the same 5 failures (gateway overlay lacks Router context, pane width override expectation, and prompt resume expectation includes a new `source` field), proving this drawer fix did not introduce them.
-- Live authenticated requests returned HTTP 200 for both the app and `/api/status`; the served entry asset is `index-BiIDdlR0.js` and contains the opaque drawer surface marker plus the existing composer marker.
-- Deployment rollback backup: `/opt/hermes-ui/dist.backup-20260923-150237`.
-- Android CI run `35913221003` passed: <https://github.com/epeder1102/hermes-ui/actions/runs/35913221003>.
+`MobileApp` still subscribes directly to `$messages`, so each streaming publish rerenders the shell before React reaches the bounded virtual rows. Virtualization prevents unbounded DOM/layout cost, which is the primary long-session problem, but a later optimization can move the `$messages` subscription into an isolated/memoized transcript component so header, sheets, and composer do not rerender per token. Do this only with regression coverage for session identity, tool-sheet state, and submit/jump behavior.
 
-## Exact next step
+## Exact next steps
 
-Physical-device acceptance: force-close/reopen the Android app, tap the three-lines button, and verify the drawer is opaque and the keyboard remains closed until the search field is tapped.
+1. **Physical-device acceptance on the Galaxy S26:** force-close/reopen the app, open a long conversation, scroll upward while a response streams, verify the viewport stays put, then tap **Latest** and verify it returns to the newest turn.
+2. Recheck the previously shipped drawer: it should remain opaque and should not summon the keyboard until Search is tapped.
+3. Complete the remaining P4 stress/polish slice:
+   - 2,000-line diff fixture;
+   - 10,000-line tool-output fixture;
+   - hard output preview budget;
+   - full-screen/show-all treatment without losing transcript position.
+4. If device profiling still shows stream-time shell churn, extract and memoize the transcript subscription as described above.
