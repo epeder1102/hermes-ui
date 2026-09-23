@@ -1,8 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import type { ToolView } from '@/components/assistant-ui/tool/fallback-model'
 
 import { DiffView } from './diff-view'
+import { FullscreenText } from './fullscreen-text'
+import { tailTextLines } from './text-budget'
 
 /** Lines rendered before the output is truncated behind "Show all". */
 const LINE_BUDGET = 200
@@ -23,12 +26,10 @@ interface OutputBlockProps {
  */
 function OutputBlock({ follow, label, text }: OutputBlockProps) {
   const scrollRef = useRef<HTMLPreElement | null>(null)
-  const [showAll, setShowAll] = useState(false)
+  const [fullScreen, setFullScreen] = useState(false)
   const [pinned, setPinned] = useState(true)
 
-  const lines = text.split('\n')
-  const truncated = !showAll && lines.length > LINE_BUDGET
-  const body = truncated ? lines.slice(-LINE_BUDGET).join('\n') : text
+  const preview = tailTextLines(text, LINE_BUDGET)
 
   // Follow the tail only while the reader has not scrolled away. Yanking them
   // back to the bottom mid-read is the reason "jump to end" exists as an
@@ -43,7 +44,7 @@ function OutputBlock({ follow, label, text }: OutputBlockProps) {
     if (el) {
       el.scrollTop = el.scrollHeight
     }
-  }, [body, follow, pinned])
+  }, [follow, pinned, preview.body])
 
   const onScroll = () => {
     const el = scrollRef.current
@@ -56,69 +57,75 @@ function OutputBlock({ follow, label, text }: OutputBlockProps) {
   }
 
   return (
-    <section style={{ display: 'flex', flexDirection: 'column', gap: 4, minHeight: 0 }}>
-      {label && (
-        <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, opacity: 0.5 }}>{label}</div>
-      )}
+    <>
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 4, minHeight: 0 }}>
+        {label && (
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, opacity: 0.5 }}>{label}</div>
+        )}
 
-      {truncated && (
-        <button onClick={() => setShowAll(true)} style={linkBtn} type="button">
-          Show all {lines.length} lines
-        </button>
-      )}
-
-      <div style={{ position: 'relative', minHeight: 0 }}>
-        <pre
-          onScroll={onScroll}
-          ref={scrollRef}
-          style={{
-            margin: 0,
-            maxHeight: '38vh',
-            overflow: 'auto',
-            background: 'var(--midground, #0f0f11)',
-            border: '1px solid var(--dt-border, #26262b)',
-            borderRadius: 8,
-            padding: 10,
-            fontSize: 12,
-            lineHeight: 1.5,
-            fontFamily: 'var(--dt-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
-            // No wrapping: wrapped terminal output and diffs are unreadable.
-            // Horizontal scroll is the correct trade on a phone.
-            whiteSpace: 'pre',
-            color: 'var(--foreground, #d4d4d8)'
-          }}
-        >
-          {body}
-        </pre>
-
-        {follow && !pinned && (
-          <button
-            onClick={() => {
-              setPinned(true)
-
-              const el = scrollRef.current
-
-              if (el) {
-                el.scrollTop = el.scrollHeight
-              }
-            }}
-            style={{
-              position: 'absolute',
-              right: 10,
-              bottom: 10,
-              ...linkBtn,
-              background: 'var(--dt-secondary, #2a2a31)',
-              border: '1px solid var(--dt-border, #3a3a44)',
-              borderRadius: 999,
-              padding: '6px 12px'
-            }}
-            type="button"
-          >
-            Jump to end
+        {preview.truncated && (
+          <button onClick={() => setFullScreen(true)} style={linkBtn} type="button">
+            Show all {preview.lineCount.toLocaleString()} lines
           </button>
         )}
-      </div>
-    </section>
+
+        <div style={{ position: 'relative', minHeight: 0 }}>
+          <pre
+            onScroll={onScroll}
+            ref={scrollRef}
+            style={{
+              margin: 0,
+              maxHeight: '38vh',
+              overflow: 'auto',
+              background: 'var(--midground, #0f0f11)',
+              border: '1px solid var(--dt-border, #26262b)',
+              borderRadius: 8,
+              padding: 10,
+              fontSize: 12,
+              lineHeight: 1.5,
+              fontFamily: 'var(--dt-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
+              // No wrapping: wrapped terminal output and diffs are unreadable.
+              // Horizontal scroll is the correct trade on a phone.
+              whiteSpace: 'pre',
+              color: 'var(--foreground, #d4d4d8)'
+            }}
+          >
+            {preview.body}
+          </pre>
+
+          {follow && !pinned && (
+            <button
+              onClick={() => {
+                setPinned(true)
+
+                const el = scrollRef.current
+
+                if (el) {
+                  el.scrollTop = el.scrollHeight
+                }
+              }}
+              style={{
+                position: 'absolute',
+                right: 10,
+                bottom: 10,
+                ...linkBtn,
+                background: 'var(--dt-secondary, #2a2a31)',
+                border: '1px solid var(--dt-border, #3a3a44)',
+                borderRadius: 999,
+                padding: '6px 12px'
+              }}
+              type="button"
+            >
+              Jump to end
+            </button>
+          )}
+        </div>
+      </section>
+
+      {fullScreen && (
+        <FullscreenText followEnd={follow} onClose={() => setFullScreen(false)} text={text} title={label || 'Tool output'} />
+      )}
+    </>
   )
 }
 
@@ -146,7 +153,7 @@ export function ToolSheet({ onClose, pending, view }: { onClose: () => void; pen
   const stderr = view.stderr ?? ''
   const hasStreams = Boolean(stdout || stderr)
 
-  return (
+  return createPortal(
     <div
       onClick={onClose}
       style={{
@@ -225,7 +232,8 @@ export function ToolSheet({ onClose, pending, view }: { onClose: () => void; pen
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react'
 
 import { type DiffFile, type DiffHunk, parseUnifiedDiff } from './diff-model'
+import { FullscreenText } from './fullscreen-text'
+import { countTextLines } from './text-budget'
 
 /** Hunks bigger than this start collapsed, even when the file is small. */
 const BIG_HUNK_LINES = 60
+/** Maximum styled line rows mounted for one expanded hunk. */
+const HUNK_PREVIEW_LINES = 160
 /** Above this many total changed lines, every hunk starts collapsed. */
 const AUTO_COLLAPSE_TOTAL = 200
 
@@ -31,6 +35,7 @@ function HunkBody({ hunk }: { hunk: DiffHunk }) {
 
           return (
             <div
+              data-diff-line
               key={index}
               style={{
                 display: 'flex',
@@ -68,7 +73,7 @@ function HunkBody({ hunk }: { hunk: DiffHunk }) {
   )
 }
 
-function FileDiff({ collapseByDefault, file }: { collapseByDefault: boolean; file: DiffFile }) {
+function FileDiff({ collapseByDefault, file, onViewAll }: { collapseByDefault: boolean; file: DiffFile; onViewAll: () => void }) {
   return (
     <section style={{ border: '1px solid var(--dt-border, #26262b)', borderRadius: 8, overflow: 'hidden' }}>
       {/* Sticky so the filename stays visible while scrolling a long diff —
@@ -112,14 +117,16 @@ function FileDiff({ collapseByDefault, file }: { collapseByDefault: boolean; fil
       </header>
 
       {file.hunks.map((hunk, index) => (
-        <Hunk collapseByDefault={collapseByDefault} hunk={hunk} key={index} />
+        <Hunk collapseByDefault={collapseByDefault} hunk={hunk} key={index} onViewAll={onViewAll} />
       ))}
     </section>
   )
 }
 
-function Hunk({ collapseByDefault, hunk }: { collapseByDefault: boolean; hunk: DiffHunk }) {
+function Hunk({ collapseByDefault, hunk, onViewAll }: { collapseByDefault: boolean; hunk: DiffHunk; onViewAll: () => void }) {
   const [open, setOpen] = useState(!collapseByDefault && hunk.lines.length <= BIG_HUNK_LINES)
+  const previewed = hunk.lines.length > HUNK_PREVIEW_LINES
+  const visibleHunk = previewed ? { ...hunk, lines: hunk.lines.slice(0, HUNK_PREVIEW_LINES) } : hunk
 
   const label = hunk.section || hunk.header || `${hunk.lines.length} lines`
 
@@ -166,7 +173,16 @@ function Hunk({ collapseByDefault, hunk }: { collapseByDefault: boolean; hunk: D
         {hunk.removed > 0 && <span style={{ color: '#f87171' }}>−{hunk.removed}</span>}
       </button>
 
-      {open && <HunkBody hunk={hunk} />}
+      {open && (
+        <>
+          <HunkBody hunk={visibleHunk} />
+          {previewed && (
+            <button onClick={onViewAll} style={fullDiffButton} type="button">
+              Show all {hunk.lines.length.toLocaleString()} hunk lines full screen
+            </button>
+          )}
+        </>
+      )}
     </>
   )
 }
@@ -181,9 +197,11 @@ function Hunk({ collapseByDefault, hunk }: { collapseByDefault: boolean; hunk: D
  * if reading diffs actually feels worse than it does on desktop.
  */
 export function DiffView({ diff }: { diff: string }) {
+  const [fullScreen, setFullScreen] = useState(false)
   const files = useMemo(() => parseUnifiedDiff(diff), [diff])
 
   const total = useMemo(() => files.reduce((sum, file) => sum + file.added + file.removed, 0), [files])
+  const lineCount = useMemo(() => countTextLines(diff), [diff])
   const collapseByDefault = total > AUTO_COLLAPSE_TOTAL
 
   if (files.length === 0) {
@@ -191,16 +209,43 @@ export function DiffView({ diff }: { diff: string }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {collapseByDefault && (
-        <p style={{ margin: 0, fontSize: 11, opacity: 0.55 }}>
-          Large diff ({total} changed lines) — hunks start collapsed.
-        </p>
-      )}
+    <>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ alignItems: 'center', display: 'flex', gap: 8 }}>
+          <span style={{ fontSize: 11, opacity: 0.55 }}>{lineCount.toLocaleString()} diff lines</span>
+          <button onClick={() => setFullScreen(true)} style={{ ...fullDiffButton, marginLeft: 'auto' }} type="button">
+            Full screen
+          </button>
+        </div>
 
-      {files.map((file, index) => (
-        <FileDiff collapseByDefault={collapseByDefault} file={file} key={`${file.path}:${index}`} />
-      ))}
-    </div>
+        {collapseByDefault && (
+          <p style={{ margin: 0, fontSize: 11, opacity: 0.55 }}>
+            Large diff ({total} changed lines) — hunks start collapsed.
+          </p>
+        )}
+
+        {files.map((file, index) => (
+          <FileDiff
+            collapseByDefault={collapseByDefault}
+            file={file}
+            key={`${file.path}:${index}`}
+            onViewAll={() => setFullScreen(true)}
+          />
+        ))}
+      </div>
+
+      {fullScreen && <FullscreenText onClose={() => setFullScreen(false)} text={diff} title="Diff" />}
+    </>
   )
+}
+
+const fullDiffButton: React.CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  color: 'var(--dt-primary, #8ab4ff)',
+  cursor: 'pointer',
+  font: 'inherit',
+  fontSize: 12,
+  minHeight: 44,
+  padding: '6px 8px'
 }

@@ -1,5 +1,8 @@
 import { useState } from 'react'
 
+import { FullscreenText } from './fullscreen-text'
+import { headTextLines } from './text-budget'
+
 /** Lines shown before a fenced block is truncated behind "Show all". */
 const LINE_BUDGET = 120
 
@@ -14,11 +17,9 @@ const LINE_BUDGET = 120
  */
 export function CodeBlock({ code, language }: { code: string; language: string }) {
   const [copied, setCopied] = useState(false)
-  const [showAll, setShowAll] = useState(false)
+  const [fullScreen, setFullScreen] = useState(false)
 
-  const lines = code.split('\n')
-  const truncated = !showAll && lines.length > LINE_BUDGET
-  const body = truncated ? lines.slice(0, LINE_BUDGET).join('\n') : code
+  const preview = headTextLines(code, LINE_BUDGET)
 
   const copy = async () => {
     try {
@@ -32,7 +33,8 @@ export function CodeBlock({ code, language }: { code: string; language: string }
   }
 
   return (
-    <div
+    <>
+      <div
       style={{
         border: '1px solid var(--dt-border, #26262b)',
         borderRadius: 8,
@@ -52,7 +54,7 @@ export function CodeBlock({ code, language }: { code: string; language: string }
         }}
       >
         <span style={{ opacity: 0.6, textTransform: 'uppercase', letterSpacing: 0.5 }}>{language || 'code'}</span>
-        <span style={{ opacity: 0.4, marginLeft: 'auto' }}>{lines.length} lines</span>
+        <span style={{ opacity: 0.4, marginLeft: 'auto' }}>{preview.lineCount.toLocaleString()} lines</span>
         <button
           onClick={copy}
           style={{
@@ -86,12 +88,12 @@ export function CodeBlock({ code, language }: { code: string; language: string }
           color: 'var(--foreground, #d4d4d8)'
         }}
       >
-        {body}
+        {preview.body}
       </pre>
 
-      {truncated && (
+      {preview.truncated && (
         <button
-          onClick={() => setShowAll(true)}
+          onClick={() => setFullScreen(true)}
           style={{
             display: 'block',
             width: '100%',
@@ -106,9 +108,15 @@ export function CodeBlock({ code, language }: { code: string; language: string }
           }}
           type="button"
         >
-          Show all {lines.length} lines
+          Show all {preview.lineCount.toLocaleString()} lines
         </button>
       )}
-    </div>
+
+      </div>
+
+      {fullScreen && (
+        <FullscreenText onClose={() => setFullScreen(false)} text={code} title={language ? `${language} code` : 'Code'} />
+      )}
+    </>
   )
 }

@@ -11,8 +11,8 @@
 
 **Status: P0–P3 are done and validated on real hardware. P4 is active: the standalone shell, tool
 cards, code/diff rendering, profile selection, blocking approval sheet, production composer,
-mobile conversation navigation, and virtualized long-session transcript are implemented. Remaining
-P4 work is output-budget/full-screen polish plus real-device stress acceptance.**
+mobile conversation navigation, virtualized long-session transcript, and bounded full-screen
+large-output readers are implemented. Remaining P4 work is real-device stress acceptance.**
 
 ### What exists right now
 
@@ -80,6 +80,9 @@ Implemented P4 slices as of 2026-09-23:
 - **P4.8:** variable-height virtualized mobile transcript with a bounded DOM at 500 messages,
   bottom-lock release while reading history, streaming-safe scroll preservation, and an explicit
   44px jump-to-latest action.
+- **P4.9:** hard preview budgets for terminal output, code, and expanded diff hunks; portal-based
+  full-screen readers that preserve transcript/sheet state; and automated 10,000-line output plus
+  2,000-line diff stress coverage.
 
 Eric's stated priority is vibe-coding from the phone with the **dev** profile: reading tool output and
 diffs, and approving actions. Weight everything toward that; other panels can stay rough.
