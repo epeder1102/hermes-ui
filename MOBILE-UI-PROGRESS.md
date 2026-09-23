@@ -7,8 +7,8 @@ Last updated: 2026-09-23
 - Host: `devbox`
 - Repository: `/home/eric/projects/hermes-ui`
 - Branch: `feat/mobile-p4-chat-surface`
-- Last shipped commit before this fix: `b76c178` (`feat(mobile): add conversation navigation`)
-- Current live asset before this fix: `index-xpCXDv_o.js`
+- Fix commit: `4a008fe` (`fix(mobile): make conversation drawer opaque`)
+- Current live asset: `index-BiIDdlR0.js`
 - User screenshot: `/root/.hermes/profiles/dev/cache/images/img_7553b5dedfce.jpg`
 
 ## User-visible failure
@@ -30,8 +30,8 @@ Opening the three-lines/conversation button produces a translucent drawer over t
 - [x] Split the drawer surface into an opaque `backgroundColor` plus optional `backgroundImage`, so an unsupported/invalid gradient cannot make the sheet transparent.
 - [x] Remove automatic search focus. Search remains available after an explicit tap.
 - [x] Run focused tests, lint, full CI-compatible tests, TypeScript, and production build.
-- [ ] Commit and push.
-- [ ] Deploy atomically, verify the authenticated live bundle, and record its asset hash here.
+- [x] Commit and push (`4a008fe`).
+- [x] Deploy atomically and verify the authenticated live bundle (`index-BiIDdlR0.js`).
 - [ ] Ask Eric to force-close/reopen and verify on the Galaxy S26; source/build/live-bundle verification is not physical-device acceptance.
 
 ## Evidence gathered
@@ -44,8 +44,10 @@ Opening the three-lines/conversation button produces a translucent drawer over t
 - The new regression test failed before the implementation because the drawer had no standalone `backgroundColor`.
 - After the implementation, 17/17 focused mobile tests passed, ESLint passed, and the TypeScript/production build passed.
 - The complete CI-compatible run passed 1,353 tests and reported 5 unrelated failures. A detached worktree at untouched commit `b76c178` reproduced the same 5 failures (gateway overlay lacks Router context, pane width override expectation, and prompt resume expectation includes a new `source` field), proving this drawer fix did not introduce them.
-- New local production entry asset: `index-BiIDdlR0.js` (not yet deployed at this checkpoint).
+- Live authenticated requests returned HTTP 200 for both the app and `/api/status`; the served entry asset is `index-BiIDdlR0.js` and contains the opaque drawer surface marker plus the existing composer marker.
+- Deployment rollback backup: `/opt/hermes-ui/dist.backup-20260923-150237`.
+- Android CI run `35913221003` passed: <https://github.com/epeder1102/hermes-ui/actions/runs/35913221003>.
 
 ## Exact next step
 
-Run the full CI-compatible Vitest suite, inspect the final diff, then commit/push and deploy atomically.
+Physical-device acceptance: force-close/reopen the Android app, tap the three-lines button, and verify the drawer is opaque and the keyboard remains closed until the search field is tapped.
