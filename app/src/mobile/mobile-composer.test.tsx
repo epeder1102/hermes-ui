@@ -2,12 +2,13 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { clearSessionDraft, setComposerDraft, stashSessionDraft } from '@/store/composer'
-import { $activeSessionId } from '@/store/session'
+import { clearSessionDraft, setComposerDraft, stashSessionDraft, takeSessionDraft } from '@/store/composer'
+import { $activeSessionId, $selectedStoredSessionId } from '@/store/session'
 
 import { MobileComposer, useMobileViewportHeight } from './mobile-composer'
 
 const SESSION_ID = 'mobile-session-1'
+const STORED_SESSION_ID = 'stored-session-1'
 
 function renderComposer(overrides: Partial<React.ComponentProps<typeof MobileComposer>> = {}) {
   const props: React.ComponentProps<typeof MobileComposer> = {
@@ -24,10 +25,13 @@ function renderComposer(overrides: Partial<React.ComponentProps<typeof MobileCom
 afterEach(() => {
   cleanup()
   clearSessionDraft(SESSION_ID)
+  clearSessionDraft(STORED_SESSION_ID)
   clearSessionDraft(null)
   setComposerDraft('')
   $activeSessionId.set(null)
+  $selectedStoredSessionId.set(null)
   document.documentElement.style.removeProperty('--mobile-viewport-height')
+  document.documentElement.style.removeProperty('--mobile-viewport-offset-top')
   vi.restoreAllMocks()
 })
 
@@ -44,6 +48,28 @@ describe('mobile composer', () => {
     fireEvent.keyDown(input, { ctrlKey: true, key: 'Enter' })
 
     await waitFor(() => expect(props.onSubmit).toHaveBeenCalledWith('first line'))
+  })
+
+  it('does not submit a composing IME value from the hardware-keyboard shortcut', () => {
+    const { props } = renderComposer()
+    const input = screen.getByRole('textbox')
+
+    fireEvent.change(input, { target: { value: '変換中' } })
+    fireEvent.keyDown(input, { ctrlKey: true, isComposing: true, key: 'Enter' })
+
+    expect(props.onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('allows drafting while reconnecting but keeps send disabled', () => {
+    renderComposer({ ready: false })
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    const send = screen.getByRole('button', { name: /^send$/i }) as HTMLButtonElement
+
+    expect(input.disabled).toBe(false)
+    fireEvent.change(input, { target: { value: 'write this offline' } })
+
+    expect(input.value).toBe('write this offline')
+    expect(send.disabled).toBe(true)
   })
 
   it('restores the draft when submit is rejected', async () => {
@@ -83,6 +109,48 @@ describe('mobile composer', () => {
     expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('restored session draft')
   })
 
+  it('prefers the stored session identity over a transient runtime id', () => {
+    stashSessionDraft(SESSION_ID, 'runtime draft', [])
+    stashSessionDraft(STORED_SESSION_ID, 'stored draft', [])
+    act(() => {
+      $activeSessionId.set(SESSION_ID)
+      $selectedStoredSessionId.set(STORED_SESSION_ID)
+    })
+
+    renderComposer()
+
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('stored draft')
+  })
+
+  it('restores a rejected send to its original session without replacing the newly selected draft', async () => {
+    let resolveSubmit: ((accepted: boolean) => void) | undefined
+
+    const onSubmit = vi.fn(
+      () =>
+        new Promise<boolean>(resolve => {
+          resolveSubmit = resolve
+        })
+    )
+
+    act(() => {
+      $selectedStoredSessionId.set(SESSION_ID)
+    })
+    renderComposer({ onSubmit })
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'original session text' } })
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }))
+
+    stashSessionDraft(STORED_SESSION_ID, 'other session draft', [])
+    act(() => {
+      $selectedStoredSessionId.set(STORED_SESSION_ID)
+    })
+    await waitFor(() => expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('other session draft'))
+
+    act(() => resolveSubmit?.(false))
+
+    await waitFor(() => expect(takeSessionDraft(SESSION_ID).text).toBe('original session text'))
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('other session draft')
+  })
+
   it('caps textarea growth and scrolls longer drafts internally', () => {
     renderComposer()
     const input = screen.getByRole('textbox') as HTMLTextAreaElement
@@ -102,7 +170,13 @@ describe('mobile visual viewport', () => {
     return null
   }
 
-  it('tracks the visual viewport so the keyboard cannot hide the composer', () => {
+  it('tracks viewport height and offset, coalesces updates, and cleans up', () => {
+    let frameCallback: FrameRequestCallback | undefined
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+      frameCallback = callback
+
+      return 7
+    })
     const viewport = new EventTarget() as VisualViewport
     Object.defineProperties(viewport, {
       height: { configurable: true, value: 512 },
@@ -110,8 +184,25 @@ describe('mobile visual viewport', () => {
     })
     Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport })
 
-    render(<ViewportProbe />)
+    const rendered = render(<ViewportProbe />)
 
     expect(document.documentElement.style.getPropertyValue('--mobile-viewport-height')).toBe('512px')
+    expect(document.documentElement.style.getPropertyValue('--mobile-viewport-offset-top')).toBe('0px')
+
+    Object.defineProperties(viewport, {
+      height: { configurable: true, value: 420 },
+      offsetTop: { configurable: true, value: 24 }
+    })
+    viewport.dispatchEvent(new Event('resize'))
+    viewport.dispatchEvent(new Event('scroll'))
+    act(() => frameCallback?.(0))
+
+    expect(window.requestAnimationFrame).toHaveBeenCalledTimes(1)
+    expect(document.documentElement.style.getPropertyValue('--mobile-viewport-height')).toBe('420px')
+    expect(document.documentElement.style.getPropertyValue('--mobile-viewport-offset-top')).toBe('24px')
+
+    rendered.unmount()
+    expect(document.documentElement.style.getPropertyValue('--mobile-viewport-height')).toBe('')
+    expect(document.documentElement.style.getPropertyValue('--mobile-viewport-offset-top')).toBe('')
   })
 })

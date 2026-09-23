@@ -17,7 +17,7 @@ import {
   stashSessionDraft,
   takeSessionDraft
 } from '@/store/composer'
-import { $activeSessionId } from '@/store/session'
+import { $activeSessionId, $selectedStoredSessionId } from '@/store/session'
 
 const MAX_TEXTAREA_HEIGHT_PX = 144
 const DRAFT_SAVE_DELAY_MS = 400
@@ -39,24 +39,45 @@ export function useMobileViewportHeight() {
   useEffect(() => {
     const viewport = window.visualViewport
     const root = document.documentElement
+    let frame: number | null = null
 
     const sync = () => {
       const height = Math.round(viewport?.height ?? window.innerHeight)
+      const offsetTop = Math.round(viewport?.offsetTop ?? 0)
 
       if (height > 0) {
         root.style.setProperty('--mobile-viewport-height', `${height}px`)
+        root.style.setProperty('--mobile-viewport-offset-top', `${offsetTop}px`)
       }
     }
 
+    const scheduleSync = () => {
+      if (frame !== null) {
+        return
+      }
+
+      frame = window.requestAnimationFrame(() => {
+        frame = null
+        sync()
+      })
+    }
+
     sync()
-    viewport?.addEventListener('resize', sync)
-    viewport?.addEventListener('scroll', sync)
-    window.addEventListener('resize', sync)
+    viewport?.addEventListener('resize', scheduleSync)
+    viewport?.addEventListener('scroll', scheduleSync)
+    window.addEventListener('resize', scheduleSync)
 
     return () => {
-      viewport?.removeEventListener('resize', sync)
-      viewport?.removeEventListener('scroll', sync)
-      window.removeEventListener('resize', sync)
+      viewport?.removeEventListener('resize', scheduleSync)
+      viewport?.removeEventListener('scroll', scheduleSync)
+      window.removeEventListener('resize', scheduleSync)
+
+      if (frame !== null) {
+        window.cancelAnimationFrame(frame)
+      }
+
+      root.style.removeProperty('--mobile-viewport-height')
+      root.style.removeProperty('--mobile-viewport-offset-top')
     }
   }, [])
 }
@@ -122,6 +143,18 @@ function useMobileDraft(scope: string | null) {
     clearSessionDraft(scopeRef.current)
   }, [cancelSave, commit])
 
+  const restore = useCallback(
+    (next: string, targetScope: string | null) => {
+      stashSessionDraft(targetScope, next, [])
+
+      if (scopeRef.current === targetScope) {
+        cancelSave()
+        commit(next)
+      }
+    },
+    [cancelSave, commit]
+  )
+
   // Swap session drafts without ever filing the old text under the new key.
   useEffect(() => {
     if (scopeRef.current === scope) {
@@ -174,12 +207,14 @@ function useMobileDraft(scope: string | null) {
     }
   }, [flush])
 
-  return { clear, draft, update }
+  return { clear, draft, restore, update }
 }
 
 export function MobileComposer({ busy, onCancel, onSubmit, ready }: MobileComposerProps) {
   const sessionId = useStore($activeSessionId)
-  const { clear, draft, update } = useMobileDraft(sessionId)
+  const selectedStoredSessionId = useStore($selectedStoredSessionId)
+  const scope = selectedStoredSessionId ?? sessionId
+  const { clear, draft, restore, update } = useMobileDraft(scope)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -202,6 +237,7 @@ export function MobileComposer({ busy, onCancel, onSubmit, ready }: MobileCompos
 
   const send = useCallback(async () => {
     const text = draft.trim()
+    const submitScope = scope
 
     if (!text || !ready || submitting) {
       return
@@ -216,22 +252,22 @@ export function MobileComposer({ busy, onCancel, onSubmit, ready }: MobileCompos
       const accepted = await onSubmit(text)
 
       if (accepted === false) {
-        update(text)
+        restore(text, submitScope)
         setError('Message was not sent. Your draft has been restored.')
       }
     } catch (cause) {
-      update(text)
+      restore(text, submitScope)
       setError(cause instanceof Error ? cause.message : 'Message was not sent. Your draft has been restored.')
     } finally {
       setSubmitting(false)
     }
-  }, [clear, draft, onSubmit, ready, submitting, update])
+  }, [clear, draft, onSubmit, ready, restore, scope, submitting])
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
       // Phone keyboards get a real newline. Hardware keyboards retain an
       // explicit shortcut without making ordinary Enter surprising.
-      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.nativeEvent.isComposing) {
         event.preventDefault()
         void send()
       }
@@ -243,7 +279,8 @@ export function MobileComposer({ busy, onCancel, onSubmit, ready }: MobileCompos
     <footer
       data-testid="mobile-composer"
       style={{
-        padding: '8px 10px max(10px, env(safe-area-inset-bottom))',
+        flexShrink: 0,
+        padding: '8px calc(10px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left))',
         borderTop: '1px solid var(--dt-border, #26262b)',
         background: 'color-mix(in srgb, var(--background, #0b0b0c) 92%, transparent)',
         boxShadow: '0 -10px 30px rgba(0,0,0,.16)',
@@ -263,11 +300,10 @@ export function MobileComposer({ busy, onCancel, onSubmit, ready }: MobileCompos
         >
           <textarea
             aria-label="Message Hermes"
-            disabled={!ready}
             enterKeyHint="enter"
             onChange={event => update(event.target.value)}
             onKeyDown={onKeyDown}
-            placeholder={ready ? 'Message Hermes…' : 'Connecting…'}
+            placeholder={ready ? 'Message Hermes…' : 'Draft while reconnecting…'}
             ref={inputRef}
             rows={1}
             style={{

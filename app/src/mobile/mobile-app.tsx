@@ -106,7 +106,11 @@ export function MobileApp() {
       style={{
         display: 'flex',
         flexDirection: 'column',
+        position: 'fixed',
+        insetInline: 0,
+        top: 'var(--mobile-viewport-offset-top, 0px)',
         height: 'var(--mobile-viewport-height, 100dvh)',
+        overflow: 'hidden',
         background: 'var(--background, #0b0b0c)',
         color: 'var(--foreground, #e7e7ea)',
         fontFamily: 'var(--dt-font-sans, system-ui, sans-serif)'
@@ -118,9 +122,10 @@ export function MobileApp() {
 
       <header
         style={{
-          padding: '10px 14px',
+          padding: 'calc(10px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) 10px calc(14px + env(safe-area-inset-left))',
           borderBottom: '1px solid var(--dt-border, #26262b)',
           display: 'flex',
+          flexShrink: 0,
           gap: 10,
           alignItems: 'center',
           fontSize: 13
@@ -136,7 +141,7 @@ export function MobileApp() {
           style={{
             ...btn,
             padding: '6px 10px',
-            minHeight: 36,
+            minHeight: 44,
             display: 'flex',
             alignItems: 'center',
             gap: 6,
@@ -173,7 +178,17 @@ export function MobileApp() {
         </button>
       </header>
 
-      <main style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <main
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          padding: '14px calc(14px + env(safe-area-inset-right)) 14px calc(14px + env(safe-area-inset-left))',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12
+        }}
+      >
         {messages.length === 0 && <p style={{ opacity: 0.5 }}>No messages yet — send one below.</p>}
 
         {messages.map(message => {
