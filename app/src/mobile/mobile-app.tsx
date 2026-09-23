@@ -10,6 +10,7 @@ import { MobileApprovalSheet } from './approval-sheet'
 import { CodeBlock } from './code-block'
 import { DiffView } from './diff-view'
 import { looksLikeDiff, splitMarkdownSegments } from './markdown-segments'
+import { MobileComposer, useMobileViewportHeight } from './mobile-composer'
 import { ProfileSheet } from './profile-sheet'
 import { switchShellMode } from './shell-mode'
 import { ToolCard } from './tool-card'
@@ -79,6 +80,7 @@ function blocksOf(message: ChatMessage): Array<{ key: string; kind: 'text'; text
  */
 export function MobileApp() {
   const { cancelRun, startFreshSessionDraft, submitText } = useChatEngine()
+  useMobileViewportHeight()
 
   const messages = useStore($messages)
   const busy = useStore($busy)
@@ -90,7 +92,6 @@ export function MobileApp() {
   const profile = normalizeProfileKey(newChatProfile ?? activeGatewayProfile)
 
   const [profileOpen, setProfileOpen] = useState(false)
-  const [draft, setDraft] = useState('')
   const endRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -100,23 +101,12 @@ export function MobileApp() {
 
   const ready = gatewayState === 'open'
 
-  const send = () => {
-    const text = draft.trim()
-
-    if (!text || !ready) {
-      return
-    }
-
-    setDraft('')
-    void submitText(text)
-  }
-
   return (
     <div
       style={{
         display: 'flex',
         flexDirection: 'column',
-        height: '100dvh',
+        height: 'var(--mobile-viewport-height, 100dvh)',
         background: 'var(--background, #0b0b0c)',
         color: 'var(--foreground, #e7e7ea)',
         fontFamily: 'var(--dt-font-sans, system-ui, sans-serif)'
@@ -216,44 +206,7 @@ export function MobileApp() {
         <div ref={endRef} />
       </main>
 
-      <footer
-        style={{
-          display: 'flex',
-          gap: 8,
-          padding: 10,
-          paddingBottom: 'max(10px, env(safe-area-inset-bottom))',
-          borderTop: '1px solid var(--dt-border, #26262b)'
-        }}
-      >
-        <textarea
-          disabled={!ready}
-          onChange={event => setDraft(event.target.value)}
-          placeholder={ready ? 'Message Hermes…' : 'Connecting…'}
-          rows={1}
-          style={{
-            flex: 1,
-            resize: 'none',
-            background: 'var(--dt-card, #131316)',
-            color: 'inherit',
-            border: '1px solid var(--dt-border, #2c2c33)',
-            borderRadius: 8,
-            padding: '10px 12px',
-            fontSize: 16,
-            fontFamily: 'inherit',
-            maxHeight: 120
-          }}
-          value={draft}
-        />
-        {busy ? (
-          <button onClick={() => void cancelRun()} style={{ ...btn, minWidth: 68 }} type="button">
-            Stop
-          </button>
-        ) : (
-          <button disabled={!ready || !draft.trim()} onClick={send} style={{ ...btn, minWidth: 68 }} type="button">
-            Send
-          </button>
-        )}
-      </footer>
+      <MobileComposer busy={busy} onCancel={cancelRun} onSubmit={submitText} ready={ready} />
 
       {profileOpen && <ProfileSheet onClose={() => setProfileOpen(false)} />}
       <MobileApprovalSheet />

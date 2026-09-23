@@ -10,8 +10,8 @@
 ## START HERE — session handoff (last updated 2026-09-23)
 
 **Status: P0–P3 are done and validated on real hardware. P4 is active: the standalone shell, tool
-cards, code/diff rendering, profile selection, and blocking approval sheet are implemented. The
-production composer and long-session/navigation pass are next.**
+cards, code/diff rendering, profile selection, blocking approval sheet, and production composer are
+implemented. The long-session/navigation pass is next.**
 
 ### What exists right now
 
@@ -69,6 +69,9 @@ Implemented P4 slices as of 2026-09-23:
   one-turn/session/permanent allow choices, explicit deny, permanent-choice confirmation, and inline
   RPC failure recovery. The sheet is scoped to the active session so a background request cannot
   hijack the foreground chat.
+- **P4.6:** production mobile composer with capped multiline growth, newline-first Enter behavior,
+  explicit Ctrl/⌘+Enter submit, session-keyed draft persistence, submit-failure recovery, 48px actions,
+  safe-area padding, and `visualViewport` keyboard resizing for Android WebView.
 
 Eric's stated priority is vibe-coding from the phone with the **dev** profile: reading tool output and
 diffs, and approving actions. Weight everything toward that; other panels can stay rough.
