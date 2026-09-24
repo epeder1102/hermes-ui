@@ -1,5 +1,6 @@
 import { useStore } from '@nanostores/react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { triggerHaptic } from '@/lib/haptics'
 import { $gateway } from '@/store/gateway'
@@ -26,11 +27,40 @@ export function MobileApprovalSheet() {
 
 function ApprovalSheetBody({ request }: { request: ApprovalRequest }) {
   const gateway = useStore($gateway)
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  const primaryRef = useRef<HTMLButtonElement | null>(null)
   const [submitting, setSubmitting] = useState<ApprovalChoice | null>(null)
   const [confirmAlways, setConfirmAlways] = useState(false)
   const [error, setError] = useState('')
   const busy = submitting !== null
   const allowPermanent = request.allowPermanent !== false
+
+  useEffect(() => {
+    primaryRef.current?.focus()
+    const hidden: Array<{ ariaHidden: string | null; element: HTMLElement; inert: boolean }> = []
+
+    for (const child of Array.from(document.body.children)) {
+      if (!(child instanceof HTMLElement) || child === dialogRef.current) {
+        continue
+      }
+
+      hidden.push({ ariaHidden: child.getAttribute('aria-hidden'), element: child, inert: child.inert })
+      child.inert = true
+      child.setAttribute('aria-hidden', 'true')
+    }
+
+    return () => {
+      for (const item of hidden) {
+        item.element.inert = item.inert
+
+        if (item.ariaHidden === null) {
+          item.element.removeAttribute('aria-hidden')
+        } else {
+          item.element.setAttribute('aria-hidden', item.ariaHidden)
+        }
+      }
+    }
+  }, [])
 
   const respond = useCallback(
     async (choice: ApprovalChoice) => {
@@ -69,6 +99,23 @@ function ApprovalSheetBody({ request }: { request: ApprovalRequest }) {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
+        event.stopImmediatePropagation()
+
+        return
+      }
+
+      if (event.key === 'Tab' && dialogRef.current) {
+        const controls = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), [tabindex="0"]'))
+        const first = controls[0]
+        const last = controls.at(-1)
+
+        if (first && last && event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (first && last && !event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first.focus()
+        }
 
         return
       }
@@ -84,16 +131,18 @@ function ApprovalSheetBody({ request }: { request: ApprovalRequest }) {
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [confirmAlways, respond])
 
-  return (
+  return createPortal(
     <div
       aria-label="Approval required"
       aria-modal="true"
+      data-mobile-approval
       data-testid="mobile-approval-backdrop"
+      ref={dialogRef}
       role="dialog"
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 100,
+        zIndex: 2000,
         display: 'flex',
         alignItems: 'flex-end',
         background: 'rgba(0, 0, 0, 0.66)'
@@ -176,7 +225,7 @@ function ApprovalSheetBody({ request }: { request: ApprovalRequest }) {
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 8, marginTop: 14 }}>
-            <button disabled={busy} onClick={() => void respond('once')} style={primaryButton} type="button">
+            <button disabled={busy} onClick={() => void respond('once')} ref={primaryRef} style={primaryButton} type="button">
               {submitting === 'once' ? 'Running…' : 'Allow once'}
             </button>
             <button disabled={busy} onClick={() => void respond('session')} style={secondaryButton} type="button">
@@ -193,7 +242,8 @@ function ApprovalSheetBody({ request }: { request: ApprovalRequest }) {
           </div>
         )}
       </section>
-    </div>
+    </div>,
+    document.body
   )
 }
 

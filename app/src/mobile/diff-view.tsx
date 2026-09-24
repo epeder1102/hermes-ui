@@ -8,6 +8,9 @@ import { countTextLines } from './text-budget'
 const BIG_HUNK_LINES = 60
 /** Maximum styled line rows mounted for one expanded hunk. */
 const HUNK_PREVIEW_LINES = 160
+/** Global summary limits keep many-file/many-hunk diffs bounded before opening full screen. */
+const FILE_PREVIEW_LIMIT = 20
+const HUNK_CONTROL_LIMIT = 40
 /** Above this many total changed lines, every hunk starts collapsed. */
 const AUTO_COLLAPSE_TOTAL = 200
 
@@ -73,7 +76,15 @@ function HunkBody({ hunk }: { hunk: DiffHunk }) {
   )
 }
 
-function FileDiff({ collapseByDefault, file, onViewAll }: { collapseByDefault: boolean; file: DiffFile; onViewAll: () => void }) {
+interface FileDiffProps {
+  file: DiffFile
+  fileIndex: number
+  onToggleHunk: (key: string) => void
+  onViewAll: () => void
+  openHunkKey: string | null
+}
+
+function FileDiff({ file, fileIndex, onToggleHunk, onViewAll, openHunkKey }: FileDiffProps) {
   return (
     <section style={{ border: '1px solid var(--dt-border, #26262b)', borderRadius: 8, overflow: 'hidden' }}>
       {/* Sticky so the filename stays visible while scrolling a long diff —
@@ -116,15 +127,24 @@ function FileDiff({ collapseByDefault, file, onViewAll }: { collapseByDefault: b
         {file.removed > 0 && <span style={{ color: '#f87171', flex: '0 0 auto' }}>−{file.removed}</span>}
       </header>
 
-      {file.hunks.map((hunk, index) => (
-        <Hunk collapseByDefault={collapseByDefault} hunk={hunk} key={index} onViewAll={onViewAll} />
-      ))}
+      {file.hunks.map((hunk, index) => {
+        const hunkKey = `${fileIndex}:${index}`
+
+        return (
+          <Hunk
+            hunk={hunk}
+            key={hunkKey}
+            onToggle={() => onToggleHunk(hunkKey)}
+            onViewAll={onViewAll}
+            open={openHunkKey === hunkKey}
+          />
+        )
+      })}
     </section>
   )
 }
 
-function Hunk({ collapseByDefault, hunk, onViewAll }: { collapseByDefault: boolean; hunk: DiffHunk; onViewAll: () => void }) {
-  const [open, setOpen] = useState(!collapseByDefault && hunk.lines.length <= BIG_HUNK_LINES)
+function Hunk({ hunk, onToggle, onViewAll, open }: { hunk: DiffHunk; onToggle: () => void; onViewAll: () => void; open: boolean }) {
   const previewed = hunk.lines.length > HUNK_PREVIEW_LINES
   const visibleHunk = previewed ? { ...hunk, lines: hunk.lines.slice(0, HUNK_PREVIEW_LINES) } : hunk
 
@@ -134,7 +154,7 @@ function Hunk({ collapseByDefault, hunk, onViewAll }: { collapseByDefault: boole
     <>
       <button
         aria-expanded={open}
-        onClick={() => setOpen(value => !value)}
+        onClick={onToggle}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -198,11 +218,35 @@ function Hunk({ collapseByDefault, hunk, onViewAll }: { collapseByDefault: boole
  */
 export function DiffView({ diff }: { diff: string }) {
   const [fullScreen, setFullScreen] = useState(false)
+  const [selectedHunkKey, setSelectedHunkKey] = useState<string | null | undefined>(undefined)
   const files = useMemo(() => parseUnifiedDiff(diff), [diff])
 
   const total = useMemo(() => files.reduce((sum, file) => sum + file.added + file.removed, 0), [files])
   const lineCount = useMemo(() => countTextLines(diff), [diff])
-  const collapseByDefault = total > AUTO_COLLAPSE_TOTAL
+  const hunkCount = useMemo(() => files.reduce((sum, file) => sum + file.hunks.length, 0), [files])
+  const collapseByDefault = total > AUTO_COLLAPSE_TOTAL || lineCount > AUTO_COLLAPSE_TOTAL
+  const firstHunk = files[0]?.hunks[0]
+  const defaultOpenHunkKey = !collapseByDefault && firstHunk && firstHunk.lines.length <= BIG_HUNK_LINES ? '0:0' : null
+  const openHunkKey = selectedHunkKey === undefined ? defaultOpenHunkKey : selectedHunkKey
+
+  const previewFiles = useMemo(() => {
+    let remainingHunks = HUNK_CONTROL_LIMIT
+
+    return files.slice(0, FILE_PREVIEW_LIMIT).flatMap((file, fileIndex) => {
+      if (remainingHunks <= 0) {
+        return []
+      }
+
+      const hunks = file.hunks.slice(0, remainingHunks)
+      remainingHunks -= hunks.length
+
+      return hunks.length > 0 ? [{ file: { ...file, hunks }, fileIndex }] : []
+    })
+  }, [files])
+
+  const shownHunks = previewFiles.reduce((sum, item) => sum + item.file.hunks.length, 0)
+  const omittedFiles = Math.max(0, files.length - previewFiles.length)
+  const omittedHunks = Math.max(0, hunkCount - shownHunks)
 
   if (files.length === 0) {
     return null
@@ -220,18 +264,26 @@ export function DiffView({ diff }: { diff: string }) {
 
         {collapseByDefault && (
           <p style={{ margin: 0, fontSize: 11, opacity: 0.55 }}>
-            Large diff ({total} changed lines) — hunks start collapsed.
+            Large diff ({lineCount.toLocaleString()} physical lines, {total} changed) — hunks start collapsed.
           </p>
         )}
 
-        {files.map((file, index) => (
+        {previewFiles.map(({ file, fileIndex }) => (
           <FileDiff
-            collapseByDefault={collapseByDefault}
             file={file}
-            key={`${file.path}:${index}`}
+            fileIndex={fileIndex}
+            key={`${file.path}:${fileIndex}`}
+            onToggleHunk={key => setSelectedHunkKey(current => (current === key ? null : key))}
             onViewAll={() => setFullScreen(true)}
+            openHunkKey={openHunkKey}
           />
         ))}
+
+        {(omittedFiles > 0 || omittedHunks > 0) && (
+          <button onClick={() => setFullScreen(true)} style={fullDiffButton} type="button">
+            Open full diff — {omittedFiles.toLocaleString()} more files, {omittedHunks.toLocaleString()} more hunks
+          </button>
+        )}
       </div>
 
       {fullScreen && <FullscreenText onClose={() => setFullScreen(false)} text={diff} title="Diff" />}

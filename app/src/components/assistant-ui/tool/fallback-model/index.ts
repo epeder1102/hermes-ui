@@ -1373,7 +1373,14 @@ export function buildToolView(part: ToolPart, inlineDiff: string): ToolView {
     (isFileEditTool(part.toolName) && Boolean(baseSubtitle.trim()))
 
   const subtitle = titleEnriched && !error && !keepSubtitleWithTitle ? '' : baseSubtitle
-  const detailBody = stripDividerLines(toolDetailText(part, argsRecord, resultRecord))
+  // Split terminal streams are the canonical payload for shell/code tools.
+  // Detect them before constructing merged detail so a large stdout/stderr
+  // result is not split, filtered, and rejoined only to be ignored by renderers.
+  const rendersAnsi = part.toolName === 'terminal' || part.toolName === 'execute_code'
+  const stdout = rendersAnsi ? firstStringField(resultRecord, ['stdout']) : ''
+  const stderrRaw = rendersAnsi ? firstStringField(resultRecord, ['stderr']) : ''
+  const hasSplitStreams = rendersAnsi && (Boolean(stdout) || Boolean(stderrRaw))
+  const detailBody = hasSplitStreams ? '' : stripDividerLines(toolDetailText(part, argsRecord, resultRecord))
 
   const detail = error
     ? [error, detailBody]
@@ -1391,13 +1398,9 @@ export function buildToolView(part: ToolPart, inlineDiff: string): ToolView {
   // streams in the renderer. Many CLIs use stderr for informational
   // messages (npm progress, git hints), so we deliberately don't paint
   // stderr destructively even though it's tagged.
-  const rendersAnsi = part.toolName === 'terminal' || part.toolName === 'execute_code'
-  const stdout = rendersAnsi ? firstStringField(resultRecord, ['stdout']) : ''
-  const stderrRaw = rendersAnsi ? firstStringField(resultRecord, ['stderr']) : ''
   // Only attach stderr when the backend actually returned it as its own
   // field — otherwise the merged `detail` already covers it and double-
   // rendering would duplicate output.
-  const hasSplitStreams = rendersAnsi && (Boolean(stdout) || Boolean(stderrRaw))
 
   return {
     countLabel: resultCount ? formatCountLabel(resultCount) : undefined,

@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import { countTextLines } from './text-budget'
+import { buildLineOffsets, lineAt } from './text-budget'
 
 interface FullscreenTextProps {
   followEnd?: boolean
@@ -10,19 +11,38 @@ interface FullscreenTextProps {
   title: string
 }
 
+interface HiddenSibling {
+  ariaHidden: string | null
+  element: HTMLElement
+  inert: boolean
+}
+
+const LINE_HEIGHT = 18
+
 /**
- * A viewport-sized plain-text reader for content that is intentionally kept
- * out of the transcript and bottom-sheet DOM. The entire payload is one text
- * node rather than one element per line, so even a 10k-line result has a small
- * DOM and closing it restores the still-mounted sheet/transcript unchanged.
+ * Viewport-sized, virtualized plain-text reader. The source string stays intact
+ * for Copy while only visible line slices enter the DOM.
  */
 export function FullscreenText({ followEnd = false, onClose, text, title }: FullscreenTextProps) {
   const closeRef = useRef<HTMLButtonElement | null>(null)
+  const dialogRef = useRef<HTMLElement | null>(null)
   const onCloseRef = useRef(onClose)
-  const scrollRef = useRef<HTMLPreElement | null>(null)
   const restoreFocusRef = useRef<HTMLElement | null>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
   const [copied, setCopied] = useState(false)
   const [pinned, setPinned] = useState(followEnd)
+  const descriptionId = useId()
+  const titleId = useId()
+  const offsets = useMemo(() => buildLineOffsets(text), [text])
+  const lineCount = offsets.length
+
+  const virtualizer = useVirtualizer({
+    count: lineCount,
+    estimateSize: () => LINE_HEIGHT,
+    getScrollElement: () => scrollRef.current,
+    initialRect: { height: 640, width: 360 },
+    overscan: 12
+  })
 
   useEffect(() => {
     onCloseRef.current = onClose
@@ -32,12 +52,51 @@ export function FullscreenText({ followEnd = false, onClose, text, title }: Full
     restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     closeRef.current?.focus()
 
+    const hidden: HiddenSibling[] = []
+
+    for (const child of Array.from(document.body.children)) {
+      if (!(child instanceof HTMLElement) || child === dialogRef.current || child.hasAttribute('data-mobile-approval')) {
+        continue
+      }
+
+      hidden.push({ ariaHidden: child.getAttribute('aria-hidden'), element: child, inert: child.inert })
+      child.inert = true
+      child.setAttribute('aria-hidden', 'true')
+    }
+
     const onKey = (event: KeyboardEvent) => {
+      if (document.querySelector('[data-mobile-approval]')) {
+        return
+      }
+
       if (event.key === 'Escape') {
-        // Capture before a parent bottom sheet sees Escape, so one keypress
-        // closes only this topmost reader rather than both overlays.
+        event.preventDefault()
         event.stopImmediatePropagation()
         onCloseRef.current()
+
+        return
+      }
+
+      if (event.key !== 'Tab' || !dialogRef.current) {
+        return
+      }
+
+      const controls = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), [tabindex="0"]'))
+      const first = controls[0]
+      const last = controls.at(-1)
+
+      if (!first || !last) {
+        event.preventDefault()
+
+        return
+      }
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
       }
     }
 
@@ -45,15 +104,26 @@ export function FullscreenText({ followEnd = false, onClose, text, title }: Full
 
     return () => {
       window.removeEventListener('keydown', onKey, true)
-      restoreFocusRef.current?.focus()
+
+      for (const item of hidden) {
+        item.element.inert = item.inert
+
+        if (item.ariaHidden === null) {
+          item.element.removeAttribute('aria-hidden')
+        } else {
+          item.element.setAttribute('aria-hidden', item.ariaHidden)
+        }
+      }
+
+      restoreFocusRef.current?.focus({ preventScroll: true })
     }
   }, [])
 
   useLayoutEffect(() => {
-    if (followEnd && pinned && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    if (followEnd && pinned && lineCount > 0) {
+      virtualizer.scrollToIndex(lineCount - 1, { align: 'end' })
     }
-  }, [followEnd, pinned, text])
+  }, [followEnd, lineCount, pinned, text, virtualizer])
 
   const copy = async () => {
     try {
@@ -65,10 +135,28 @@ export function FullscreenText({ followEnd = false, onClose, text, title }: Full
     }
   }
 
+  const measuredRows = virtualizer.getVirtualItems()
+  // ResizeObserver is absent in jsdom and can report a zero-height WebView on
+  // the first frame. Keep that frame bounded and useful until measurement lands.
+  const fallbackStart = followEnd ? Math.max(0, lineCount - 40) : 0
+
+  const visibleRows =
+    measuredRows.length > 0
+      ? measuredRows
+      : Array.from({ length: Math.min(40, lineCount) }, (_, offset) => {
+          const index = fallbackStart + offset
+
+          return { index, key: index, size: LINE_HEIGHT, start: index * LINE_HEIGHT }
+        })
+
+  const totalSize = Math.max(virtualizer.getTotalSize(), lineCount * LINE_HEIGHT)
+
   return createPortal(
     <section
-      aria-label={`${title} full screen`}
+      aria-describedby={descriptionId}
+      aria-labelledby={titleId}
       aria-modal="true"
+      ref={dialogRef}
       role="dialog"
       style={{
         background: 'var(--background, #0b0b0c)',
@@ -92,10 +180,15 @@ export function FullscreenText({ followEnd = false, onClose, text, title }: Full
             'max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 6px max(10px, env(safe-area-inset-left))'
         }}
       >
-        <strong style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {title}
+        <strong
+          id={titleId}
+          style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+        >
+          {title} full screen
         </strong>
-        <span style={{ fontSize: 11, opacity: 0.5 }}>{countTextLines(text).toLocaleString()} lines</span>
+        <span id={descriptionId} style={{ fontSize: 11, opacity: 0.5 }}>
+          {lineCount.toLocaleString()} lines; virtualized view
+        </span>
         <button onClick={copy} style={actionButton} type="button">
           {copied ? 'Copied' : 'Copy'}
         </button>
@@ -105,7 +198,7 @@ export function FullscreenText({ followEnd = false, onClose, text, title }: Full
       </header>
 
       <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-        <pre
+        <div
           data-fullscreen-text
           onScroll={() => {
             const element = scrollRef.current
@@ -121,16 +214,34 @@ export function FullscreenText({ followEnd = false, onClose, text, title }: Full
             fontFamily: 'var(--dt-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
             fontSize: 12,
             height: '100%',
-            lineHeight: 1.5,
-            margin: 0,
+            lineHeight: `${LINE_HEIGHT}px`,
             overflow: 'auto',
+            overscrollBehavior: 'contain',
             padding:
-              '12px max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))',
-            whiteSpace: 'pre'
+              '12px max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))'
           }}
         >
-          {text}
-        </pre>
+          <div style={{ height: totalSize, minWidth: '100%', position: 'relative' }}>
+            {visibleRows.map(item => (
+              <div
+                data-virtual-line
+                key={item.key}
+                style={{
+                  height: item.size,
+                  left: 0,
+                  minWidth: '100%',
+                  position: 'absolute',
+                  top: 0,
+                  transform: `translateY(${item.start}px)`,
+                  whiteSpace: 'pre',
+                  width: 'max-content'
+                }}
+              >
+                {lineAt(text, offsets, item.index) || ' '}
+              </div>
+            ))}
+          </div>
+        </div>
 
         {followEnd && !pinned && (
           <button
@@ -138,8 +249,8 @@ export function FullscreenText({ followEnd = false, onClose, text, title }: Full
             onClick={() => {
               setPinned(true)
 
-              if (scrollRef.current) {
-                scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+              if (lineCount > 0) {
+                virtualizer.scrollToIndex(lineCount - 1, { align: 'end' })
               }
             }}
             style={{

@@ -69,6 +69,19 @@ describe('buildToolView terminal exit-code status', () => {
     expect(terminal({ exit_code: 0, output: 'done' }).status).toBe('success')
   })
 
+  it('uses split streams without retaining a duplicate merged detail payload', () => {
+    const view = terminal({
+      exit_code: 0,
+      output: 'merged output that should not be retained',
+      stderr: 'warning',
+      stdout: 'result'
+    })
+
+    expect(view.detail).toBe('')
+    expect(view.stdout).toBe('result')
+    expect(view.stderr).toBe('warning')
+  })
+
   // Explicit error signals still win regardless of output presence.
   it('keeps explicit error signals red even with output', () => {
     expect(terminal({ error: 'boom', exit_code: 0, output: 'partial' }).status).toBe('error')

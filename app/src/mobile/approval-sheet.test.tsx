@@ -7,6 +7,7 @@ import { clearAllPrompts, setApprovalRequest } from '@/store/prompts'
 import { setActiveSessionId } from '@/store/session'
 
 import { MobileApprovalSheet } from './approval-sheet'
+import { FullscreenText } from './fullscreen-text'
 
 function showApproval(over: Partial<Parameters<typeof setApprovalRequest>[0]> = {}) {
   act(() => {
@@ -98,5 +99,27 @@ describe('mobile approval sheet', () => {
     })
 
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('portals blocking approval above an informational full-screen reader and owns Escape', () => {
+    const closeReader = vi.fn()
+    render(
+      <>
+        <FullscreenText onClose={closeReader} text="large output" title="stdout" />
+        <MobileApprovalSheet />
+      </>
+    )
+    showApproval()
+
+    const approval = screen.getByRole('dialog', { name: /approval required/i })
+    const reader = document.querySelector<HTMLElement>('[role="dialog"][aria-hidden="true"]')
+
+    expect(reader).not.toBeNull()
+    expect(Number(approval.style.zIndex)).toBeGreaterThan(Number(reader?.style.zIndex))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /allow once/i }))
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.getByRole('dialog', { name: /approval required/i })).toBeTruthy()
+    expect(closeReader).not.toHaveBeenCalled()
   })
 })
