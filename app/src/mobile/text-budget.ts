@@ -39,6 +39,14 @@ export function countTextLines(text: string): number {
   return count
 }
 
+export function truncateVisualLine(text: string, maxChars = VIRTUAL_LINE_CHAR_BUDGET): string {
+  if (text.length <= maxChars) {
+    return text
+  }
+
+  return `${text.slice(0, maxChars)} … [line truncated visually; Copy includes full content]`
+}
+
 export function lineAt(text: string, offsets: number[], index: number, maxChars = VIRTUAL_LINE_CHAR_BUDGET): string {
   const start = offsets[index]
 
@@ -48,10 +56,8 @@ export function lineAt(text: string, offsets: number[], index: number, maxChars 
 
   const next = offsets[index + 1]
   const end = next === undefined ? text.length : next - 1
-  const visibleEnd = Math.min(end, start + maxChars)
-  const line = text.slice(start, visibleEnd).replace(/\r$/, '')
 
-  return visibleEnd < end ? `${line} … [line truncated visually; Copy includes full content]` : line
+  return truncateVisualLine(text.slice(start, end).replace(/\r$/, ''), maxChars)
 }
 
 export function headTextLines(text: string, budget: number, maxChars = PREVIEW_CHAR_BUDGET): TextPreview {

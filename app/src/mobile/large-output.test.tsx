@@ -121,6 +121,24 @@ describe('mobile large-output budgets', () => {
     expect(screen.getByRole('button', { name: /context only/i }).getAttribute('aria-expanded')).toBe('false')
   })
 
+  it('caps pathological single-line diff rows by characters', () => {
+    const giantLine = `+${'x'.repeat(128 * 1024)}`
+
+    const diff = [
+      'diff --git a/src/minified.js b/src/minified.js',
+      '--- a/src/minified.js',
+      '+++ b/src/minified.js',
+      '@@ -0,0 +1 @@ minified bundle',
+      giantLine
+    ].join('\n')
+
+    const { container } = render(<DiffView diff={diff} />)
+    const renderedLine = container.querySelector('[data-diff-line]')
+
+    expect(renderedLine?.textContent?.length).toBeLessThan(17 * 1024)
+    expect(renderedLine?.textContent).toContain('Copy includes full content')
+  })
+
   it('opens long fenced code in a bounded virtual reader instead of expanding the transcript row', () => {
     const code = Array.from({ length: 500 }, (_, index) => `const value${index + 1} = ${index + 1}`).join('\n')
     const { container } = render(<CodeBlock code={code} language="ts" />)

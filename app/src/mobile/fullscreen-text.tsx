@@ -2,6 +2,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
+import { isolateBodyChildren } from './modal-isolation'
 import { buildLineOffsets, lineAt } from './text-budget'
 
 interface FullscreenTextProps {
@@ -9,12 +10,6 @@ interface FullscreenTextProps {
   onClose: () => void
   text: string
   title: string
-}
-
-interface HiddenSibling {
-  ariaHidden: string | null
-  element: HTMLElement
-  inert: boolean
 }
 
 const LINE_HEIGHT = 18
@@ -52,17 +47,9 @@ export function FullscreenText({ followEnd = false, onClose, text, title }: Full
     restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     closeRef.current?.focus()
 
-    const hidden: HiddenSibling[] = []
-
-    for (const child of Array.from(document.body.children)) {
-      if (!(child instanceof HTMLElement) || child === dialogRef.current || child.hasAttribute('data-mobile-approval')) {
-        continue
-      }
-
-      hidden.push({ ariaHidden: child.getAttribute('aria-hidden'), element: child, inert: child.inert })
-      child.inert = true
-      child.setAttribute('aria-hidden', 'true')
-    }
+    const releaseIsolation = isolateBodyChildren(
+      child => child === dialogRef.current || child.hasAttribute('data-mobile-approval')
+    )
 
     const onKey = (event: KeyboardEvent) => {
       if (document.querySelector('[data-mobile-approval]')) {
@@ -105,16 +92,7 @@ export function FullscreenText({ followEnd = false, onClose, text, title }: Full
     return () => {
       window.removeEventListener('keydown', onKey, true)
 
-      for (const item of hidden) {
-        item.element.inert = item.inert
-
-        if (item.ariaHidden === null) {
-          item.element.removeAttribute('aria-hidden')
-        } else {
-          item.element.setAttribute('aria-hidden', item.ariaHidden)
-        }
-      }
-
+      releaseIsolation()
       restoreFocusRef.current?.focus({ preventScroll: true })
     }
   }, [])

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 
 import { type DiffFile, type DiffHunk, parseUnifiedDiff } from './diff-model'
 import { FullscreenText } from './fullscreen-text'
-import { countTextLines } from './text-budget'
+import { countTextLines, truncateVisualLine } from './text-budget'
 
 /** Hunks bigger than this start collapsed, even when the file is small. */
 const BIG_HUNK_LINES = 60
@@ -67,7 +67,7 @@ function HunkBody({ hunk }: { hunk: DiffHunk }) {
 
               {/* No wrapping, ever. A wrapped diff loses the alignment that makes
                   it readable; the hunk scrolls horizontally instead. */}
-              <span style={{ whiteSpace: 'pre', paddingRight: 12 }}>{line.text || ' '}</span>
+              <span style={{ whiteSpace: 'pre', paddingRight: 12 }}>{truncateVisualLine(line.text) || ' '}</span>
             </div>
           )
         })}

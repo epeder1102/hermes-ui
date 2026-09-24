@@ -6,6 +6,8 @@ import { triggerHaptic } from '@/lib/haptics'
 import { $gateway } from '@/store/gateway'
 import { $approvalRequest, type ApprovalRequest, clearApprovalRequest } from '@/store/prompts'
 
+import { isolateBodyChildren } from './modal-isolation'
+
 type ApprovalChoice = 'once' | 'session' | 'always' | 'deny'
 
 /**
@@ -28,7 +30,9 @@ export function MobileApprovalSheet() {
 function ApprovalSheetBody({ request }: { request: ApprovalRequest }) {
   const gateway = useStore($gateway)
   const dialogRef = useRef<HTMLDivElement | null>(null)
+  const confirmationBackRef = useRef<HTMLButtonElement | null>(null)
   const primaryRef = useRef<HTMLButtonElement | null>(null)
+  const restoreFocusRef = useRef<HTMLElement | null>(null)
   const [submitting, setSubmitting] = useState<ApprovalChoice | null>(null)
   const [confirmAlways, setConfirmAlways] = useState(false)
   const [error, setError] = useState('')
@@ -36,31 +40,21 @@ function ApprovalSheetBody({ request }: { request: ApprovalRequest }) {
   const allowPermanent = request.allowPermanent !== false
 
   useEffect(() => {
+    restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     primaryRef.current?.focus()
-    const hidden: Array<{ ariaHidden: string | null; element: HTMLElement; inert: boolean }> = []
-
-    for (const child of Array.from(document.body.children)) {
-      if (!(child instanceof HTMLElement) || child === dialogRef.current) {
-        continue
-      }
-
-      hidden.push({ ariaHidden: child.getAttribute('aria-hidden'), element: child, inert: child.inert })
-      child.inert = true
-      child.setAttribute('aria-hidden', 'true')
-    }
+    const releaseIsolation = isolateBodyChildren(child => child === dialogRef.current)
 
     return () => {
-      for (const item of hidden) {
-        item.element.inert = item.inert
-
-        if (item.ariaHidden === null) {
-          item.element.removeAttribute('aria-hidden')
-        } else {
-          item.element.setAttribute('aria-hidden', item.ariaHidden)
-        }
-      }
+      releaseIsolation()
+      restoreFocusRef.current?.focus({ preventScroll: true })
     }
   }, [])
+
+  useEffect(() => {
+    if (confirmAlways) {
+      confirmationBackRef.current?.focus()
+    }
+  }, [confirmAlways])
 
   const respond = useCallback(
     async (choice: ApprovalChoice) => {
@@ -109,7 +103,11 @@ function ApprovalSheetBody({ request }: { request: ApprovalRequest }) {
         const first = controls[0]
         const last = controls.at(-1)
 
-        if (first && last && event.shiftKey && document.activeElement === first) {
+        if (first && last && !dialogRef.current.contains(document.activeElement)) {
+          event.preventDefault()
+          const target = event.shiftKey ? last : first
+          target.focus()
+        } else if (first && last && event.shiftKey && document.activeElement === first) {
           event.preventDefault()
           last.focus()
         } else if (first && last && !event.shiftKey && document.activeElement === last) {
@@ -215,7 +213,13 @@ function ApprovalSheetBody({ request }: { request: ApprovalRequest }) {
               This changes Hermes configuration permanently. Use “Allow this session” if you only need it for the current chat.
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <button disabled={busy} onClick={() => setConfirmAlways(false)} style={secondaryButton} type="button">
+              <button
+                disabled={busy}
+                onClick={() => setConfirmAlways(false)}
+                ref={confirmationBackRef}
+                style={secondaryButton}
+                type="button"
+              >
                 Back
               </button>
               <button disabled={busy} onClick={() => void respond('always')} style={dangerButton} type="button">

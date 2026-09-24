@@ -109,6 +109,7 @@ describe('mobile approval sheet', () => {
         <MobileApprovalSheet />
       </>
     )
+
     showApproval()
 
     const approval = screen.getByRole('dialog', { name: /approval required/i })
@@ -121,5 +122,52 @@ describe('mobile approval sheet', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(screen.getByRole('dialog', { name: /approval required/i })).toBeTruthy()
     expect(closeReader).not.toHaveBeenCalled()
+  })
+
+  it('keeps the app isolated when an underlying reader unmounts before the approval', () => {
+    const closeReader = vi.fn()
+
+    const rendered = render(
+      <>
+        <FullscreenText onClose={closeReader} text="large output" title="stdout" />
+        <MobileApprovalSheet />
+      </>
+    )
+
+    showApproval()
+
+    rendered.rerender(<MobileApprovalSheet />)
+
+    expect(rendered.container.inert).toBe(true)
+    expect(rendered.container.getAttribute('aria-hidden')).toBe('true')
+
+    act(() => clearAllPrompts())
+
+    expect(rendered.container.inert).not.toBe(true)
+    expect(rendered.container.hasAttribute('aria-hidden')).toBe(false)
+  })
+
+  it('moves focus into permanent confirmation and restores the prior trigger on close', () => {
+    const rendered = render(
+      <>
+        <button type="button">Open approval</button>
+        <MobileApprovalSheet />
+      </>
+    )
+
+    const trigger = screen.getByRole('button', { name: /open approval/i })
+    trigger.focus()
+    showApproval()
+
+    fireEvent.click(screen.getByRole('button', { name: /always allow/i }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^back$/i }))
+
+    trigger.focus()
+    fireEvent.keyDown(window, { key: 'Tab' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^back$/i }))
+
+    act(() => clearAllPrompts())
+    expect(document.activeElement).toBe(trigger)
+    expect(rendered.container.inert).not.toBe(true)
   })
 })
