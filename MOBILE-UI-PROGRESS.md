@@ -12,10 +12,11 @@ Last updated: 2026-09-23
 - Large-output readers: `f66bd00` (`feat(mobile): bound large output readers`)
 - Large-output hardening: `9c67653` (`fix(mobile): harden large output overlays`)
 - Review follow-up: `e3f35d3` (`fix(mobile): close overlay hardening gaps`)
-- Current live asset: `index-CG2o-KQK.js`
-- Live index SHA-256: `a26d3c96b3b38f917290ab9f12613ca552517ea7460b903ae67d3a8dedc27bce`
-- Live asset SHA-256: `45c14ebbd0a409826eb6ba6f1c60a6908c07c19f2b6d736f3607aa81c691e753`
-- Current rollback backup: `/opt/hermes-ui/dist.rollback-e3f35d3-20260923-225241`
+- Live-activity UX follow-up: `32c5004` (`fix(mobile): simplify live agent activity`)
+- Current live asset: `index-j4XB1vtk.js`
+- Live index SHA-256: `573ef6112a7ebff5b627b0ec38578ccbdc72f1ef72cb22af1397fcea5461be03`
+- Live asset SHA-256: `897f612e2adc96bf910f737c0fcc97f1ae3afddca4280a8638c6cba10ee2a77f`
+- Current rollback backup: `/opt/hermes-ui/dist.rollback-32c5004-20260923-234145`
 
 ## Completed slice: P4.8 long-session transcript
 
@@ -26,7 +27,7 @@ Last updated: 2026-09-23
 - [x] Follow streaming growth only while the reader remains near the bottom.
 - [x] Release bottom lock when the reader scrolls into history so streaming cannot yank the viewport.
 - [x] Add a 44px accessible `Jump to latest message` control that restores bottom lock.
-- [x] Avoid smooth-scroll races while row heights are changing.
+- [x] Keep automatic stream-follow immediate to avoid dynamic-row smooth-scroll races; animate only the reader's explicit **Latest** action.
 - [x] Filter hidden records before virtual indexing/rendering.
 - [x] Derive running tool state from the owning message's `pending` state instead of global session `busy`.
 
@@ -49,6 +50,15 @@ Last updated: 2026-09-23
 - [x] Keep blocking approval above informational readers, recover focus during permanent-choice confirmation, and restore the prior trigger on close.
 - [x] Update `MOBILE-PLAN.md` to mark P4.9 complete.
 - [x] Build, push, deploy atomically, and verify the live production asset.
+
+## Completed slice: P4.10 live-agent activity polish
+
+- [x] Animate the explicit **Latest** action while keeping automatic stream-follow immediate and stable.
+- [x] Show only the latest text/tool activity while an assistant turn is pending, replacing the prior activity as work advances.
+- [x] Hide completed narration, reasoning, and tool history after turn completion while retaining the canonical final response.
+- [x] Preserve all underlying transcript/tool data; the reduction is mobile presentation only.
+- [x] Wrap long tool titles, commands, targets, URLs, and ordinary message text inside their containers.
+- [x] Allow a direct transcript touch to interrupt an in-progress Latest animation.
 
 ## Validation evidence
 
@@ -79,8 +89,15 @@ Last updated: 2026-09-23
 - The deployed index and full manifest match the staged build. Direct live fetch of `/assets/index-CG2o-KQK.js` returned HTTP 200, byte-matched the deployed file, and contained the new truncation marker.
 - `/api/status` returned HTTP 200 and `hermes-dashboard.service` remained active after the swap.
 - Server deployment is verified; physical-device cache refresh and interaction acceptance remain outstanding.
+- Live-activity focused regression suite: **16/16 passed**, including smooth Latest behavior, replaceable pending activity, final-answer-only completion, and text wrapping.
+- Follow-up CI-equivalent jsdom suite: **1,316/1,316 passed** across 498 suites; unrestricted result remained **1,370/1,375** with the same five documented baseline failures.
+- Follow-up production Vite/PWA build passed and generated `index-j4XB1vtk.js`; TypeScript, strict ESLint, and `git diff --check` also passed.
+- Android CI for `32c5004`: passed in 3m26s — <https://github.com/epeder1102/hermes-ui/actions/runs/35956437557>. All tests, web build, Capacitor generation/sync, APK build, and artifact upload passed.
+- The follow-up stage contained 1,009 files and exactly matched the devbox build manifest: `abee2ed5c3d13b42743119b68ddc8955132a801e41a97418566cffd4a87f7cb2`.
+- Atomic `RENAME_EXCHANGE` deployment completed; live index/full manifest and the directly served `index-j4XB1vtk.js` bytes all match the validated stage.
+- The prior `e3f35d3` production bundle is retained at `/opt/hermes-ui/dist.rollback-32c5004-20260923-234145`; `/api/status` remained HTTP 200 and `hermes-dashboard.service` remained active.
 
-## P4.9 files
+## P4.9/P4.10 files
 
 - `app/src/mobile/text-budget.ts`
   - allocation-light line counting, bounded head/tail extraction, and shared visual-line character truncation.
@@ -102,6 +119,12 @@ Last updated: 2026-09-23
   - blocking ownership, nested isolation, focus containment, and restoration regressions.
 - `app/src/components/assistant-ui/tool/fallback-model/index.ts`
   - split-stream terminal modeling without duplicate merged-detail retention.
+- `app/src/mobile/mobile-app.tsx`
+  - virtual transcript bottom-lock behavior, animated explicit Latest action, replaceable current activity, final-answer-only completion, and bounded message wrapping.
+- `app/src/mobile/tool-card.tsx`
+  - wrapping, width-bounded current tool status cards with full output retained in the sheet.
+- `app/src/mobile/mobile-app.test.tsx`
+  - smooth Latest, current-activity replacement, final-answer cleanup, wrapping, virtualization, and profile-switching regressions.
 - `MOBILE-PLAN.md`
   - P4.9 completion and remaining physical-device acceptance.
 
@@ -113,7 +136,9 @@ Last updated: 2026-09-23
 
 1. **Physical-device acceptance on the Galaxy S26:**
    - force-close/reopen the app;
-   - open a long conversation and verify history scrolling plus **Latest**;
+   - open a long conversation and verify **Latest** visibly animates to the bottom;
+   - start an agent turn with several tools and verify only the current activity is shown, it changes in place, and only the final answer remains when done;
+   - verify a long command/path and a long unbroken message wrap inside their cards instead of extending past the bubble;
    - open a large tool result and a large diff, use **Show all** / **Full screen**, then close and verify the sheet/transcript position is unchanged;
    - open an approval above a full-screen reader, exercise **Always allow…** then **Back**, and verify focus and blocking behavior remain correct;
    - rotate while full screen and confirm horizontal scrolling remains usable for no-wrap output.
