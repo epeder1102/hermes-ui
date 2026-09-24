@@ -10,9 +10,12 @@ Last updated: 2026-09-23
 - Long-session transcript: `d162502` (`feat(mobile): virtualize long conversations`)
 - Transcript semantics fix: `b4d79a3` (`fix(mobile): preserve transcript message semantics`)
 - Large-output readers: `f66bd00` (`feat(mobile): bound large output readers`)
-- Current live asset: `index-CeNnvhhv.js`
-- Live asset SHA-256: `5361bed7d9f8e21f8862634a76a94cf6d3c555f2ff127ae1e0ed67328c84fd8c`
-- Current rollback backup: `/opt/hermes-ui/dist.backup-20260923-173506`
+- Large-output hardening: `9c67653` (`fix(mobile): harden large output overlays`)
+- Review follow-up: `e3f35d3` (`fix(mobile): close overlay hardening gaps`)
+- Current live asset: `index-CG2o-KQK.js`
+- Live index SHA-256: `a26d3c96b3b38f917290ab9f12613ca552517ea7460b903ae67d3a8dedc27bce`
+- Live asset SHA-256: `45c14ebbd0a409826eb6ba6f1c60a6908c07c19f2b6d736f3607aa81c691e753`
+- Current rollback backup: `/opt/hermes-ui/dist.rollback-e3f35d3-20260923-225241`
 
 ## Completed slice: P4.8 long-session transcript
 
@@ -33,53 +36,72 @@ Last updated: 2026-09-23
 - [x] Keep fenced-code previews to the first 120 lines.
 - [x] Keep expanded diff hunks to at most 160 styled line rows.
 - [x] Open complete output, code, and raw diffs in a viewport-sized full-screen reader rather than expanding a virtual transcript row.
-- [x] Render each complete payload as one text node, avoiding 2,000–10,000 per-line DOM elements.
+- [x] Virtualize complete payloads so fewer than 80 line rows mount, while per-line and preview character budgets also bound retained/rendered text.
 - [x] Preserve the underlying diff expansion, tool sheet, and transcript state when the reader closes.
 - [x] Keep streaming output pinned only while the reader remains at the end; expose `Jump to end` after scrolling away.
 - [x] Provide full-payload copy, line counts, Escape handling, safe-area padding, and 44px actions.
 - [x] Portal tool sheets and full-screen readers to `document.body`, avoiding transformed virtual-row containing-block bugs.
 - [x] Ensure Escape closes only the topmost full-screen reader, not its underlying tool sheet.
 - [x] Add explicit 10,000-line tool-output, 2,000-line diff, and 500-line fenced-code stress regressions.
+- [x] Bound aggregate many-hunk previews and pathological single-line/minified diffs by both rows and characters.
+- [x] Avoid constructing and retaining a duplicate merged terminal payload when split stdout/stderr streams are available.
+- [x] Trap and restore focus, isolate modal backgrounds with reference counting, and preserve approval-sheet ownership when overlays unmount out of order.
+- [x] Keep blocking approval above informational readers, recover focus during permanent-choice confirmation, and restore the prior trigger on close.
 - [x] Update `MOBILE-PLAN.md` to mark P4.9 complete.
 - [x] Build, push, deploy atomically, and verify the live production asset.
 
 ## Validation evidence
 
-- Focused P4.8/P4.9 suites: **33/33 passed**:
-  - `src/mobile/mobile-app.test.tsx`: 16 tests;
-  - `src/mobile/diff-model.test.ts`: 14 tests;
-  - `src/mobile/large-output.test.tsx`: 3 tests.
+- Focused hardening suites: **45/45 passed**:
+  - terminal fallback model: 27 tests;
+  - approval sheet and overlay ordering/isolation: 9 tests;
+  - large-output stress and character budgets: 6 tests;
+  - shared text-budget helpers: 3 tests.
 - Stress assertions prove:
-  - a 10,000-line tool preview contains only its bounded tail while full screen exposes both endpoints with fewer than 20 reader descendants;
-  - a 2,000-line expanded diff hunk mounts exactly 160 styled line rows while full screen exposes the final lines;
-  - closing full screen restores the bounded underlying renderer without losing expansion state.
+  - a 10,000-line tool preview retains a bounded tail while the complete reader mounts fewer than 80 virtual rows;
+  - a 2,000-line expanded diff mounts exactly 160 styled rows while the complete raw diff remains available full screen;
+  - a 128 KiB minified diff line is visually character-bounded without changing full-copy content;
+  - 100 hunks are globally bounded to 40 controls;
+  - nested reader/approval isolation survives out-of-order teardown without exposing or permanently hiding the app.
 - TypeScript: passed (`npx tsc -p . --noEmit`).
-- ESLint: passed for all modified implementation and test files with no warnings.
-- Production Vite/PWA build: passed; generated `index-CeNnvhhv.js`.
-- Full local jsdom suite: **1,360 passed / 1,365 total**. The five failures are the same known repository baseline failures outside this slice:
-  - three gateway connecting-overlay tests lacking their expected routing/state conditions;
+- Strict ESLint: passed for `src/` with no warnings.
+- Repository-defined CI-equivalent jsdom suite: passed with the three documented baseline files excluded by name.
+- Full unrestricted local jsdom suite: **1,370 passed / 1,375 total**. The five failures remain exactly the known repository baseline failures:
+  - three gateway connecting-overlay tests;
   - one pane width-override expectation;
-  - one prompt recovery expectation that omits the newer `source` field.
-- Android CI for `f66bd00`: passed on attempt 2 — <https://github.com/epeder1102/hermes-ui/actions/runs/35928842611>. Attempt 1 hit the unrelated flaky `toolset-config-panel` credential test; the rerun passed test, web build, Capacitor sync, APK build, and artifact upload.
-- Atomic deployment completed with the previous production directory retained at `/opt/hermes-ui/dist.backup-20260923-173506`.
-- Direct live fetch of `/assets/index-CeNnvhhv.js` returned HTTP 200, matched the deployed file byte-for-byte, and contained the large-output/full-screen plus transcript markers.
-- Authenticated `/api/status` returned HTTP 200 JSON.
-- `hermes-dashboard.service` remained active after the swap.
+  - one prompt recovery expectation.
+- Production Vite/PWA build: passed; generated `index-CG2o-KQK.js`.
+- `git diff --check`: passed.
+- Independent review findings were resolved before release: reference-counted modal isolation, per-line diff character limits, and approval focus lifecycle handling.
+- Android CI for `e3f35d3`: passed in 2m48s — <https://github.com/epeder1102/hermes-ui/actions/runs/35949539031>. Typecheck, lint, tests, web build, Capacitor generation/sync, APK build, and artifact upload all passed.
+- The staged bundle contained 1,009 files; its complete manifest hash matched the devbox build: `b4a5e537232872af743ff28845ad1a8d04ba88fb2bb1a259be34bbc869581ba3`.
+- Atomic `RENAME_EXCHANGE` deployment completed with the previous production directory retained at `/opt/hermes-ui/dist.rollback-e3f35d3-20260923-225241`.
+- The deployed index and full manifest match the staged build. Direct live fetch of `/assets/index-CG2o-KQK.js` returned HTTP 200, byte-matched the deployed file, and contained the new truncation marker.
+- `/api/status` returned HTTP 200 and `hermes-dashboard.service` remained active after the swap.
+- Server deployment is verified; physical-device cache refresh and interaction acceptance remain outstanding.
 
 ## P4.9 files
 
 - `app/src/mobile/text-budget.ts`
-  - allocation-light line counting and bounded head/tail extraction.
+  - allocation-light line counting, bounded head/tail extraction, and shared visual-line character truncation.
 - `app/src/mobile/fullscreen-text.tsx`
-  - portal-based complete-payload reader with focus restoration, copy, safe areas, and streaming tail-follow behavior.
+  - portal-based virtual complete-payload reader with focus trapping/restoration, copy, safe areas, and streaming tail-follow behavior.
+- `app/src/mobile/modal-isolation.ts`
+  - reference-counted body isolation that remains correct when nested overlays unmount out of order.
+- `app/src/mobile/approval-sheet.tsx`
+  - approval-safe overlay priority plus confirmation focus, containment, and trigger restoration.
 - `app/src/mobile/tool-sheet.tsx`
   - 200-line tail previews, full-screen output, and body-level portal rendering.
 - `app/src/mobile/code-block.tsx`
   - 120-line head previews and full-screen code.
 - `app/src/mobile/diff-view.tsx`
-  - 160-row hunk previews and complete raw-diff full screen.
+  - 160-row hunk previews, aggregate many-hunk controls, per-line character limits, and complete raw-diff full screen.
 - `app/src/mobile/large-output.test.tsx`
-  - 10,000-line output, 2,000-line diff, and long-code stress coverage.
+  - 10,000-line output, 2,000-line diff, many-hunk, pathological single-line, and long-code stress coverage.
+- `app/src/mobile/approval-sheet.test.tsx`
+  - blocking ownership, nested isolation, focus containment, and restoration regressions.
+- `app/src/components/assistant-ui/tool/fallback-model/index.ts`
+  - split-stream terminal modeling without duplicate merged-detail retention.
 - `MOBILE-PLAN.md`
   - P4.9 completion and remaining physical-device acceptance.
 
@@ -93,6 +115,7 @@ Last updated: 2026-09-23
    - force-close/reopen the app;
    - open a long conversation and verify history scrolling plus **Latest**;
    - open a large tool result and a large diff, use **Show all** / **Full screen**, then close and verify the sheet/transcript position is unchanged;
+   - open an approval above a full-screen reader, exercise **Always allow…** then **Back**, and verify focus and blocking behavior remain correct;
    - rotate while full screen and confirm horizontal scrolling remains usable for no-wrap output.
 2. Recheck the previously shipped drawer: it should remain opaque and should not summon the keyboard until Search is tapped.
 3. If device profiling still shows stream-time shell churn, extract and memoize the transcript subscription as described above.
