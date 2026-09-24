@@ -13,10 +13,11 @@ Last updated: 2026-09-23
 - Large-output hardening: `9c67653` (`fix(mobile): harden large output overlays`)
 - Review follow-up: `e3f35d3` (`fix(mobile): close overlay hardening gaps`)
 - Live-activity UX follow-up: `32c5004` (`fix(mobile): simplify live agent activity`)
-- Current live asset: `index-j4XB1vtk.js`
-- Live index SHA-256: `573ef6112a7ebff5b627b0ec38578ccbdc72f1ef72cb22af1397fcea5461be03`
-- Live asset SHA-256: `897f612e2adc96bf910f737c0fcc97f1ae3afddca4280a8638c6cba10ee2a77f`
-- Current rollback backup: `/opt/hermes-ui/dist.rollback-32c5004-20260923-234145`
+- Independent-review hardening: `870b05d` (`fix(mobile): harden latest scroll activity`)
+- Current live asset: `index-CajM92e5.js`
+- Live index SHA-256: `ec88e5f76cb0b5e33a06dee20d434faa1798687e6b6b412f6c804dc38c2247c2`
+- Live asset SHA-256: `b130dbaf3236d63db4d591dc98313748233400f41d4d99797131aa3fc8554865`
+- Current rollback backup: `/opt/hermes-ui/dist.rollback-870b05d-20260924-000049`
 
 ## Completed slice: P4.8 long-session transcript
 
@@ -59,6 +60,8 @@ Last updated: 2026-09-23
 - [x] Preserve all underlying transcript/tool data; the reduction is mobile presentation only.
 - [x] Wrap long tool titles, commands, targets, URLs, and ordinary message text inside their containers.
 - [x] Allow a direct transcript touch to interrupt an in-progress Latest animation.
+- [x] Cancel the animation lock for pointer, touch, wheel, and keyboard input, then perform a bounded final virtual-row alignment.
+- [x] Honor `prefers-reduced-motion` and keep internal reasoning out of the current-activity projection.
 
 ## Validation evidence
 
@@ -96,6 +99,12 @@ Last updated: 2026-09-23
 - The follow-up stage contained 1,009 files and exactly matched the devbox build manifest: `abee2ed5c3d13b42743119b68ddc8955132a801e41a97418566cffd4a87f7cb2`.
 - Atomic `RENAME_EXCHANGE` deployment completed; live index/full manifest and the directly served `index-j4XB1vtk.js` bytes all match the validated stage.
 - The prior `e3f35d3` production bundle is retained at `/opt/hermes-ui/dist.rollback-32c5004-20260923-234145`; `/api/status` remained HTTP 200 and `hermes-dashboard.service` remained active.
+- Independent review found no blocking issues and prompted hardening for interrupted smooth scrolling, reduced motion, and interleaved reasoning/text streams.
+- Review-follow-up focused tests: **17/17 passed**; CI-equivalent suite: **1,317/1,317 passed** across 498 suites. TypeScript, strict lint, production build, and whitespace checks passed.
+- Android CI for `870b05d`: passed in 3m32s — <https://github.com/epeder1102/hermes-ui/actions/runs/35957790329>, including APK build and artifact upload.
+- The final stage's 1,009-file manifest exactly matched the devbox build: `090d061fa595d0a2cb958561c4aa98747aca7b10cd3035b98395479daf2fce74`.
+- Final atomic deployment verification passed: live index/full manifest and served `index-CajM92e5.js` bytes match the validated stage; `/api/status` is HTTP 200 and `hermes-dashboard.service` is active.
+- The prior `32c5004` bundle is retained at `/opt/hermes-ui/dist.rollback-870b05d-20260924-000049`.
 
 ## P4.9/P4.10 files
 
