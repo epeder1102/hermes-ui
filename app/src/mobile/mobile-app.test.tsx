@@ -2,7 +2,7 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { HashRouter } from 'react-router-dom'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '@/i18n'
 import { queryClient } from '@/lib/query-client'
@@ -179,6 +179,9 @@ describe('mobile shell (P4 kill criterion)', () => {
       scrollHeight: { configurable: true, value: 4_000 },
       scrollTop: { configurable: true, value: 400, writable: true }
     })
+    const scrollTo = vi.fn()
+
+    Object.defineProperty(transcript, 'scrollTo', { configurable: true, value: scrollTo })
     fireEvent.scroll(transcript)
 
     const jump = screen.getByRole('button', { name: /jump to latest message/i })
@@ -202,6 +205,86 @@ describe('mobile shell (P4 kill criterion)', () => {
 
     fireEvent.click(jump)
     expect(screen.queryByRole('button', { name: /jump to latest message/i })).toBeNull()
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' }))
+  })
+
+  it('replaces prior agent steps with the current activity, then leaves only the final response', () => {
+    renderMobileShell()
+
+    const currentTool = {
+      type: 'tool-call',
+      toolCallId: 'current-tool',
+      toolName: 'terminal',
+      args: { command: 'pwd' },
+      argsText: '{}'
+    }
+
+    const earlierParts = [
+      { type: 'text' as const, text: 'Planning source checks' },
+      {
+        type: 'tool-call',
+        toolCallId: 'old-tool',
+        toolName: 'project_list',
+        args: {},
+        argsText: '{}',
+        result: { projects: [] }
+      } as never,
+      { type: 'text' as const, text: 'Checking the repository now' }
+    ]
+
+    act(() => {
+      setMessages([
+        {
+          id: 'active-agent-turn',
+          role: 'assistant',
+          pending: true,
+          parts: [...earlierParts, currentTool as never]
+        }
+      ])
+    })
+
+    expect(screen.queryByText('Planning source checks')).toBeNull()
+    expect(screen.queryByRole('button', { name: /project_list/i })).toBeNull()
+    expect(screen.queryByText('Checking the repository now')).toBeNull()
+    expect(screen.getByRole('button', { name: /terminal.*running/i })).toBeTruthy()
+
+    act(() => {
+      setMessages([
+        {
+          id: 'active-agent-turn',
+          role: 'assistant',
+          pending: true,
+          parts: [
+            ...earlierParts,
+            { ...currentTool, result: { stdout: '/repo' } } as never,
+            { type: 'text', text: 'Preparing the answer' }
+          ]
+        }
+      ])
+    })
+
+    expect(screen.queryByRole('button', { name: /terminal/i })).toBeNull()
+    expect(screen.getByText('Preparing the answer')).toBeTruthy()
+
+    act(() => {
+      setMessages([
+        {
+          id: 'active-agent-turn',
+          role: 'assistant',
+          pending: false,
+          parts: [
+            ...earlierParts,
+            { ...currentTool, result: { stdout: '/repo' } } as never,
+            { type: 'text', text: 'Here is the final response.' }
+          ]
+        }
+      ])
+    })
+
+    expect(screen.queryByText('Planning source checks')).toBeNull()
+    expect(screen.queryByRole('button', { name: /project_list|terminal/i })).toBeNull()
+    expect(screen.queryByText('Checking the repository now')).toBeNull()
+    expect(screen.getByText('Here is the final response.')).toBeTruthy()
   })
 
   it('opens mobile conversation navigation from the active title', () => {
@@ -252,6 +335,7 @@ describe('mobile tool-call cards', () => {
         {
           id: 'a1',
           role: 'assistant',
+          pending: true,
           parts: [
             { type: 'text', text: 'running that now' },
             toolPart(over) as never
@@ -261,21 +345,22 @@ describe('mobile tool-call cards', () => {
     })
   }
 
-  it('renders a tool call as a collapsed one-line card, not raw text', () => {
+  it('renders the current tool as a wrapped card without raw output', () => {
     renderMobileShell()
     seedToolMessage({ result: { stdout: 'total 0\nsecond line stays hidden\nthird line too' } })
 
-    // The surrounding narrative text still renders as a normal bubble...
-    expect(screen.getByText('running that now')).toBeTruthy()
+    // Only the latest activity remains visible while the agent is working.
+    expect(screen.queryByText('running that now')).toBeNull()
 
-    // ...and the tool call is a button (tappable row), not inline text.
     const card = screen.getByRole('button', { name: /terminal/i })
+    const title = card.querySelector('[data-tool-title]') as HTMLElement | null
 
     expect(card).toBeTruthy()
+    expect(card.style.maxWidth).toBe('100%')
+    expect(title?.style.overflowWrap).toBe('anywhere')
+    expect(title?.style.whiteSpace).toBe('normal')
 
-    // Collapsed means ONE line: a first-line preview is shown, but the rest of
-    // the output is not in the transcript. This is the invariant that keeps a
-    // noisy tool run from burying the conversation on a phone.
+    // Tool output remains in the sheet rather than expanding the transcript.
     expect(screen.queryByText(/second line stays hidden/)).toBeNull()
     expect(screen.queryByText(/third line too/)).toBeNull()
   })
@@ -305,28 +390,6 @@ describe('mobile tool-call cards', () => {
     expect(screen.queryByText(/visible only in the sheet/)).toBeNull()
   })
 
-  it('keeps a tool call in narrative order between text blocks', () => {
-    renderMobileShell()
-
-    act(() => {
-      setGatewayState('open')
-      setMessages([
-        {
-          id: 'a1',
-          role: 'assistant',
-          parts: [
-            { type: 'text', text: 'first I will look' },
-            toolPart({ result: {} }) as never,
-            { type: 'text', text: 'and here is what I found' }
-          ]
-        }
-      ])
-    })
-
-    const rendered = screen.getByText('first I will look').parentElement?.textContent ?? ''
-
-    expect(rendered.indexOf('first I will look')).toBeLessThan(rendered.indexOf('and here is what I found'))
-  })
 })
 
 describe('mobile profile switcher', () => {

@@ -47,8 +47,12 @@ function isToolPart(part: ChatMessagePart): boolean {
  * because a tool card nested inside a chat bubble has nowhere to put a
  * fixed-height scroll region.
  */
-function blocksOf(message: ChatMessage): Array<{ key: string; kind: 'text'; text: string } | { key: string; kind: 'tool'; part: ToolPart }> {
-  const blocks: Array<{ key: string; kind: 'text'; text: string } | { key: string; kind: 'tool'; part: ToolPart }> = []
+type MessageBlock =
+  | { key: string; kind: 'text'; text: string }
+  | { key: string; kind: 'tool'; part: ToolPart }
+
+function blocksOf(message: ChatMessage): MessageBlock[] {
+  const blocks: MessageBlock[] = []
   let buffer = ''
 
   const flush = (index: number) => {
@@ -77,6 +81,39 @@ function blocksOf(message: ChatMessage): Array<{ key: string; kind: 'text'; text
   flush(message.parts.length)
 
   return blocks
+}
+
+/**
+ * Mobile keeps the durable transcript untouched but presents an active agent
+ * turn as one replaceable status row. Once the turn completes, only text after
+ * the final tool call remains as the user-facing answer.
+ */
+function visibleBlocksOf(message: ChatMessage): MessageBlock[] {
+  const blocks = blocksOf(message)
+
+  if (message.role !== 'assistant') {
+    return blocks
+  }
+
+  if (message.pending) {
+    return blocks.slice(-1)
+  }
+
+  let lastToolIndex = -1
+
+  for (let index = message.parts.length - 1; index >= 0; index--) {
+    if (isToolPart(message.parts[index])) {
+      lastToolIndex = index
+
+      break
+    }
+  }
+
+  const finalParts = message.parts
+    .slice(lastToolIndex + 1)
+    .filter(part => typeof part === 'string' || (part as { type?: string }).type !== 'reasoning')
+
+  return blocksOf({ ...message, parts: finalParts })
 }
 
 /**
@@ -254,6 +291,7 @@ function MobileMessageList({ messages: allMessages, sessionKey }: { messages: Ch
   const messages = useMemo(() => allMessages.filter(message => !message.hidden), [allMessages])
   const scrollerRef = useRef<HTMLElement | null>(null)
   const followLatestRef = useRef(true)
+  const scrollingToLatestRef = useRef(false)
   const [isAtBottom, setIsAtBottom] = useState(true)
 
   const virtualizer = useVirtualizer({
@@ -266,14 +304,22 @@ function MobileMessageList({ messages: allMessages, sessionKey }: { messages: Ch
     overscan: MESSAGE_OVERSCAN
   })
 
-  const scrollToLatest = useCallback(() => {
-    followLatestRef.current = true
-    setIsAtBottom(true)
+  const scrollToLatest = useCallback(
+    (behavior: ScrollBehavior = 'auto') => {
+      followLatestRef.current = true
+      setIsAtBottom(true)
 
-    if (messages.length > 0) {
-      virtualizer.scrollToIndex(messages.length - 1, { align: 'end' })
-    }
-  }, [messages.length, virtualizer])
+      if (messages.length > 0) {
+        virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior })
+      }
+    },
+    [messages.length, virtualizer]
+  )
+
+  const animateToLatest = useCallback(() => {
+    scrollingToLatestRef.current = true
+    scrollToLatest('smooth')
+  }, [scrollToLatest])
 
   const updateBottomLock = useCallback(() => {
     const scroller = scrollerRef.current
@@ -284,6 +330,17 @@ function MobileMessageList({ messages: allMessages, sessionKey }: { messages: Ch
 
     const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= BOTTOM_THRESHOLD_PX
 
+    if (scrollingToLatestRef.current) {
+      if (atBottom) {
+        scrollingToLatestRef.current = false
+      }
+
+      followLatestRef.current = true
+      setIsAtBottom(true)
+
+      return
+    }
+
     followLatestRef.current = atBottom
     setIsAtBottom(previous => (previous === atBottom ? previous : atBottom))
   }, [])
@@ -291,6 +348,7 @@ function MobileMessageList({ messages: allMessages, sessionKey }: { messages: Ch
   // A session swap and initial history load should open at the newest turn.
   useEffect(() => {
     followLatestRef.current = true
+    scrollingToLatestRef.current = false
     setIsAtBottom(true)
   }, [sessionKey])
 
@@ -348,6 +406,9 @@ function MobileMessageList({ messages: allMessages, sessionKey }: { messages: Ch
     <section style={{ flex: 1, minHeight: 0, position: 'relative' }}>
       <main
         aria-label="Conversation messages"
+        onPointerDown={() => {
+          scrollingToLatestRef.current = false
+        }}
         onScroll={updateBottomLock}
         ref={scrollerRef}
         role="log"
@@ -393,7 +454,7 @@ function MobileMessageList({ messages: allMessages, sessionKey }: { messages: Ch
       {!isAtBottom && messages.length > 0 && (
         <button
           aria-label="Jump to latest message"
-          onClick={scrollToLatest}
+          onClick={animateToLatest}
           style={{
             ...btn,
             alignItems: 'center',
@@ -422,7 +483,7 @@ function MobileMessageList({ messages: allMessages, sessionKey }: { messages: Ch
 }
 
 function MobileMessage({ message }: { message: ChatMessage }) {
-  const blocks = blocksOf(message)
+  const blocks = visibleBlocksOf(message)
   const isUser = message.role === 'user'
 
   return (
@@ -435,7 +496,7 @@ function MobileMessage({ message }: { message: ChatMessage }) {
         )
       )}
 
-      {blocks.length === 0 && !message.error && (
+      {message.parts.length === 0 && !message.error && (
         <em style={{ alignSelf: isUser ? 'flex-end' : 'flex-start', opacity: 0.4, fontSize: 12 }}>
           {message.pending ? '…' : '(no content)'}
         </em>
@@ -492,7 +553,9 @@ function MessageText({ isUser, text }: { isUser: boolean; text: string }) {
             key={index}
             style={{
               alignSelf: isUser ? 'flex-end' : 'flex-start',
+              boxSizing: 'border-box',
               maxWidth: '85%',
+              minWidth: 0,
               background: isUser
                 ? 'color-mix(in srgb, var(--dt-primary, #4a7fd0) 16%, var(--dt-card, #17171a))'
                 : 'var(--dt-card, #17171a)',
@@ -500,6 +563,7 @@ function MessageText({ isUser, text }: { isUser: boolean; text: string }) {
               borderRadius: 10,
               padding: '8px 10px',
               whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere',
               wordBreak: 'break-word',
               fontSize: 14,
               lineHeight: 1.45

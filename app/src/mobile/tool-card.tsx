@@ -23,7 +23,8 @@ const STATUS_COLOR: Record<ToolStatus, string> = {
 /**
  * Collapsed tool-call row.
  *
- * Always exactly one line: status dot, tool title, target, duration. Tapping it
+ * Compact status row: status dot, tool title/target, duration. Long commands
+ * wrap within the card rather than widening the mobile transcript. Tapping it
  * opens a bottom sheet rather than growing inline — inline expansion inside a
  * scrolling transcript throws away the reader's scroll position on a phone,
  * which is the single worst mobile chat behaviour and the reason the plan
@@ -65,9 +66,12 @@ export function ToolCard({ part, running }: { part: ToolPart; running: boolean }
         onClick={() => setOpen(true)}
         style={{
           display: 'flex',
-          alignItems: 'center',
+          alignItems: 'flex-start',
+          boxSizing: 'border-box',
           gap: 8,
           width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
           minHeight: 44,
           padding: '8px 10px',
           background: 'var(--dt-card, #131316)',
@@ -94,29 +98,54 @@ export function ToolCard({ part, running }: { part: ToolPart; running: boolean }
           }}
         />
 
-        <span style={{ fontWeight: 600, flex: '0 0 auto' }}>{view.title}</span>
+        <span style={{ display: 'flex', flex: '1 1 auto', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+          <span
+            data-tool-title
+            style={{
+              fontWeight: 600,
+              minWidth: 0,
+              overflowWrap: 'anywhere',
+              whiteSpace: 'normal',
+              wordBreak: 'break-word'
+            }}
+          >
+            {view.title}
+          </span>
 
-        {/* The target is the part most likely to overflow, so it is the only
-            element allowed to ellipsize. Everything else keeps its full text. */}
-        <span
-          style={{
-            flex: '1 1 auto',
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            opacity: 0.6,
-            fontFamily: 'var(--dt-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
-            fontSize: 12
-          }}
-        >
-          {view.subtitle}
+          {view.subtitle && (
+            <span
+              style={{
+                minWidth: 0,
+                opacity: 0.6,
+                overflowWrap: 'anywhere',
+                whiteSpace: 'normal',
+                wordBreak: 'break-word',
+                fontFamily: 'var(--dt-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
+                fontSize: 12
+              }}
+            >
+              {view.subtitle}
+            </span>
+          )}
         </span>
 
-        {view.countLabel && <span style={{ flex: '0 0 auto', opacity: 0.55, fontSize: 12 }}>{view.countLabel}</span>}
-        {duration && <span style={{ flex: '0 0 auto', opacity: 0.5, fontSize: 12 }}>{duration}</span>}
-        <span aria-hidden style={{ flex: '0 0 auto', opacity: 0.4 }}>
-          ›
+        <span
+          style={{
+            alignItems: 'center',
+            display: 'flex',
+            flex: '0 1 auto',
+            flexWrap: 'wrap',
+            gap: 8,
+            justifyContent: 'flex-end',
+            maxWidth: '36%',
+            minWidth: 0
+          }}
+        >
+          {view.countLabel && <span style={{ opacity: 0.55, fontSize: 12 }}>{view.countLabel}</span>}
+          {duration && <span style={{ opacity: 0.5, fontSize: 12 }}>{duration}</span>}
+          <span aria-hidden style={{ opacity: 0.4 }}>
+            ›
+          </span>
         </span>
       </button>
 
