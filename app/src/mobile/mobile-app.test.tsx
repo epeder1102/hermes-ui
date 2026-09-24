@@ -44,6 +44,7 @@ function renderMobileShell() {
 
 afterEach(() => {
   cleanup()
+  vi.unstubAllGlobals()
   setMessages([])
   setSessions([])
   setSelectedStoredSessionId(null)
@@ -72,7 +73,11 @@ describe('mobile shell (P4 kill criterion)', () => {
     })
 
     expect(screen.getByText('hello from the phone')).toBeTruthy()
-    expect(screen.getByText('streamed reply')).toBeTruthy()
+    const response = screen.getByText('streamed reply')
+
+    expect(response).toBeTruthy()
+    expect(response.style.overflowWrap).toBe('anywhere')
+    expect(response.style.minWidth).toBe('0px')
   })
 
   it('enables the composer when the shared gateway state opens', () => {
@@ -206,6 +211,52 @@ describe('mobile shell (P4 kill criterion)', () => {
     fireEvent.click(jump)
     expect(screen.queryByRole('button', { name: /jump to latest message/i })).toBeNull()
     expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' }))
+
+    // A direct reader gesture cancels the programmatic lock, so an interrupted
+    // animation cannot let later streaming yank the reader back down.
+    transcript.scrollTop = 400
+    fireEvent.pointerDown(transcript)
+    fireEvent.scroll(transcript)
+    expect(screen.getByRole('button', { name: /jump to latest message/i })).toBeTruthy()
+  })
+
+  it('honors reduced motion when Latest restores the bottom lock', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(() => true)
+      }))
+    )
+    setMessages(
+      Array.from({ length: 40 }, (_, index) => ({
+        id: `reduced-${index}`,
+        role: index % 2 === 0 ? ('user' as const) : ('assistant' as const),
+        parts: [{ type: 'text' as const, text: `message ${index}` }]
+      }))
+    )
+    renderMobileShell()
+
+    const transcript = screen.getByRole('log', { name: /conversation messages/i })
+    const scrollTo = vi.fn()
+
+    Object.defineProperties(transcript, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 4_000 },
+      scrollTop: { configurable: true, value: 400, writable: true },
+      scrollTo: { configurable: true, value: scrollTo }
+    })
+    fireEvent.scroll(transcript)
+    fireEvent.click(screen.getByRole('button', { name: /jump to latest message/i }))
+
+    expect(scrollTo).toHaveBeenCalled()
+    expect(scrollTo).not.toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' }))
   })
 
   it('replaces prior agent steps with the current activity, then leaves only the final response', () => {
@@ -257,7 +308,8 @@ describe('mobile shell (P4 kill criterion)', () => {
           parts: [
             ...earlierParts,
             { ...currentTool, result: { stdout: '/repo' } } as never,
-            { type: 'text', text: 'Preparing the answer' }
+            { type: 'text', text: 'Preparing the answer' },
+            { type: 'reasoning', text: 'internal reasoning delta after visible commentary' }
           ]
         }
       ])
@@ -265,6 +317,7 @@ describe('mobile shell (P4 kill criterion)', () => {
 
     expect(screen.queryByRole('button', { name: /terminal/i })).toBeNull()
     expect(screen.getByText('Preparing the answer')).toBeTruthy()
+    expect(screen.queryByText(/internal reasoning delta/)).toBeNull()
 
     act(() => {
       setMessages([

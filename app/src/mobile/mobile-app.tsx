@@ -71,6 +71,13 @@ function blocksOf(message: ChatMessage): MessageBlock[] {
       return
     }
 
+    // Internal reasoning is not user-facing activity. Live commentary arrives
+    // as text parts; hiding reasoning also avoids inferring event recency from
+    // interleaved channels that the canonical store intentionally coalesces.
+    if (typeof part !== 'string' && part.type === 'reasoning') {
+      return
+    }
+
     const text = textOf(part)
 
     if (text) {
@@ -292,6 +299,7 @@ function MobileMessageList({ messages: allMessages, sessionKey }: { messages: Ch
   const scrollerRef = useRef<HTMLElement | null>(null)
   const followLatestRef = useRef(true)
   const scrollingToLatestRef = useRef(false)
+  const latestAnimationTimerRef = useRef<number | null>(null)
   const [isAtBottom, setIsAtBottom] = useState(true)
 
   const virtualizer = useVirtualizer({
@@ -304,22 +312,46 @@ function MobileMessageList({ messages: allMessages, sessionKey }: { messages: Ch
     overscan: MESSAGE_OVERSCAN
   })
 
-  const scrollToLatest = useCallback(
-    (behavior: ScrollBehavior = 'auto') => {
-      followLatestRef.current = true
-      setIsAtBottom(true)
+  const scrollToLatest = useCallback(() => {
+    followLatestRef.current = true
+    setIsAtBottom(true)
 
-      if (messages.length > 0) {
-        virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior })
-      }
-    },
-    [messages.length, virtualizer]
-  )
+    if (messages.length > 0) {
+      virtualizer.scrollToIndex(messages.length - 1, { align: 'end' })
+    }
+  }, [messages.length, virtualizer])
+
+  const cancelLatestAnimation = useCallback(() => {
+    if (latestAnimationTimerRef.current !== null) {
+      window.clearTimeout(latestAnimationTimerRef.current)
+      latestAnimationTimerRef.current = null
+    }
+
+    scrollingToLatestRef.current = false
+  }, [])
 
   const animateToLatest = useCallback(() => {
+    const scroller = scrollerRef.current
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+
+    cancelLatestAnimation()
+
+    if (!scroller || reduceMotion) {
+      scrollToLatest()
+
+      return
+    }
+
     scrollingToLatestRef.current = true
-    scrollToLatest('smooth')
-  }, [scrollToLatest])
+    followLatestRef.current = true
+    setIsAtBottom(true)
+    scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' })
+    latestAnimationTimerRef.current = window.setTimeout(() => {
+      latestAnimationTimerRef.current = null
+      scrollingToLatestRef.current = false
+      scrollToLatest()
+    }, 600)
+  }, [cancelLatestAnimation, scrollToLatest])
 
   const updateBottomLock = useCallback(() => {
     const scroller = scrollerRef.current
@@ -332,7 +364,7 @@ function MobileMessageList({ messages: allMessages, sessionKey }: { messages: Ch
 
     if (scrollingToLatestRef.current) {
       if (atBottom) {
-        scrollingToLatestRef.current = false
+        cancelLatestAnimation()
       }
 
       followLatestRef.current = true
@@ -343,20 +375,22 @@ function MobileMessageList({ messages: allMessages, sessionKey }: { messages: Ch
 
     followLatestRef.current = atBottom
     setIsAtBottom(previous => (previous === atBottom ? previous : atBottom))
-  }, [])
+  }, [cancelLatestAnimation])
 
   // A session swap and initial history load should open at the newest turn.
   useEffect(() => {
+    cancelLatestAnimation()
     followLatestRef.current = true
-    scrollingToLatestRef.current = false
     setIsAtBottom(true)
-  }, [sessionKey])
+
+    return cancelLatestAnimation
+  }, [cancelLatestAnimation, sessionKey])
 
   // Streaming text and asynchronously measured rich blocks can grow over
   // several frames. Pin until height settles, but only while the reader has
   // not deliberately escaped the bottom lock.
   useLayoutEffect(() => {
-    if (!followLatestRef.current || messages.length === 0) {
+    if (!followLatestRef.current || scrollingToLatestRef.current || messages.length === 0) {
       return
     }
 
@@ -406,10 +440,11 @@ function MobileMessageList({ messages: allMessages, sessionKey }: { messages: Ch
     <section style={{ flex: 1, minHeight: 0, position: 'relative' }}>
       <main
         aria-label="Conversation messages"
-        onPointerDown={() => {
-          scrollingToLatestRef.current = false
-        }}
+        onKeyDown={cancelLatestAnimation}
+        onPointerDown={cancelLatestAnimation}
         onScroll={updateBottomLock}
+        onTouchStart={cancelLatestAnimation}
+        onWheel={cancelLatestAnimation}
         ref={scrollerRef}
         role="log"
         style={{
